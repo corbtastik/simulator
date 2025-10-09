@@ -1,0 +1,14 @@
+{
+  "name": "Aaronsburg",
+  "lat": 40.9042,
+  "lng": -77.4513,
+  "weight": 1,
+  "sigmaKm": 5,
+  "serviceIssue": {
+    "type": "broadband",
+    "accountId": "ATTB-102",
+    "issue": "slow-speeds",
+    "downstreamMbps": 5.4,
+    "expectedMbps": 100
+  }
+}

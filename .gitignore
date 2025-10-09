@@ -1,0 +1,63 @@
+# ---- OS / Editor junk ----
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+*.log
+
+# ---- Env / secrets ----
+.env
+.env.*
+!.env.example
+
+# ---- Node (root, server, web) ----
+node_modules/
+server/node_modules/
+web/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ---- Vite / Builds ----
+dist/
+server/dist/
+web/dist/
+.vite/
+server/.vite/
+web/.vite/
+
+# ---- Test / Coverage ----
+coverage/
+.nyc_output/
+
+# ---- Temporary / cache ----
+.tmp/
+temp/
+.cache/
+server/.cache/
+web/.cache/
+
+# ---- Python (for scripts/) ----
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.venv/
+venv/
+
+# ---- Mongo / local data dumps (if any) ----
+dump/
+*.bson
+*.metadata.json
+
+# ---- Optional: large raw datasets you don't want in git ----
+# Comment these out if you DO want them versioned.
+# *.csv
+*.parquet
+
+# ---- Mac sandbox artifacts (sometimes appear) ----
+._*

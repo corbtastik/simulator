@@ -1,0 +1,132 @@
+
+[
+  {
+    "type": "broadband",
+    "accountId": "ATTB-102",
+    "issue": "slow-speeds",
+    "downstreamMbps": 5.4,
+    "expectedMbps": 100
+  },
+  {
+    "type": "wireless",
+    "phone": "+1-972-555-0158",
+    "issue": "no-signal",
+    "towerId": "DFW-TWR-332",
+    "deviceModel": "iPhone 15 Pro"
+  },
+  {
+    "type": "fiber",
+    "accountId": "ATTF-047",
+    "issue": "outage",
+    "outageStart": "2025-10-08T14:32:00Z",
+    "region": "Plano, TX"
+  },
+  {
+    "type": "5g",
+    "imei": "359874654321098",
+    "issue": "handover-failure",
+    "cellSector": "Sector-B",
+    "towerId": "AUS-5G-092"
+  },
+  {
+    "type": "smallcell",
+    "nodeId": "SC-ATX-221",
+    "issue": "power-loss",
+    "lastHeartbeat": "2025-10-08T12:45:00Z"
+  },
+  {
+    "type": "wifi-hotspot",
+    "ssid": "attwifi-PLANO",
+    "issue": "authentication-failure",
+    "macAddress": "02:1A:7E:9B:55:AA"
+  },
+  {
+    "type": "enterprise",
+    "customer": "J.P. Morgan",
+    "slaTier": "platinum",
+    "issue": "latency-spike",
+    "latencyMs": 250
+  },
+  {
+    "type": "iot",
+    "deviceId": "SIM-20394712",
+    "issue": "no-uplink",
+    "fleet": "FedEx Fleet Sensors",
+    "region": "Dallas-Fort Worth"
+  },
+  {
+    "type": "satellite",
+    "terminalId": "SAT-4829",
+    "issue": "signal-degradation",
+    "snrDb": 8.2
+  },
+  {
+    "type": "firstnet",
+    "agency": "Dallas Fire Department",
+    "issue": "coverage-gap",
+    "lat": 32.7767,
+    "lng": -96.7970
+  },
+  {
+    "type": "voip",
+    "accountId": "ATT-VOIP-883",
+    "issue": "call-jitter",
+    "jitterMs": 120
+  },
+  {
+    "type": "b2b-vpn",
+    "customer": "Lockheed Martin",
+    "issue": "packet-loss",
+    "lossPercent": 3.5,
+    "tunnelId": "VPN-DFW-002"
+  },
+  {
+    "type": "fiber-construction",
+    "projectId": "FBR-PLN-225",
+    "issue": "permit-delay",
+    "city": "Frisco",
+    "contractor": "Lumen Builders"
+  },
+  {
+    "type": "backhaul",
+    "linkId": "BH-PLANO-777",
+    "issue": "capacity-exceeded",
+    "utilizationPct": 98.7
+  },
+  {
+    "type": "datacenter",
+    "facilityId": "ATTDAL01",
+    "issue": "cooling-alert",
+    "temperatureC": 38.5
+  },
+  {
+    "type": "edge-compute",
+    "nodeId": "EDGE-AUS-009",
+    "issue": "cpu-overload",
+    "cpuUtilization": 96
+  },
+  {
+    "type": "public-safety",
+    "agency": "Plano PD",
+    "issue": "dispatch-app-error",
+    "incidentId": "INC-2025-8811"
+  },
+  {
+    "type": "smart-city",
+    "sensorId": "CAM-DFW-882",
+    "issue": "connectivity-loss",
+    "location": "Main & 15th St"
+  },
+  {
+    "type": "government",
+    "department": "FAA Communications",
+    "issue": "redundancy-failover",
+    "region": "Southwest Ops"
+  },
+  {
+    "type": "cloud-network",
+    "customer": "AWS Direct Connect",
+    "issue": "route-flap",
+    "bgpPeer": "10.10.22.1"
+  }
+]

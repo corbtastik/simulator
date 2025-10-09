@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Incident Simulator</title>
+    <style>
+      body{font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin:0; background:#0b0e12; color:#e7eaee}
+      .wrap{max-width:920px; margin:32px auto; padding:0 16px}
+      .card{background:#11151b; border:1px solid #1f2630; border-radius:16px; padding:20px; margin-bottom:16px}
+      .row{display:flex; align-items:center; gap:12px; margin:10px 0}
+      .row > label{width:180px; color:#98a2b3}
+      input[type="range"]{ width:260px }
+      input[type="number"], select, input[type="text"] { background:#0b0e12; color:#e7eaee; border:1px solid #263241; border-radius:8px; padding:8px 10px;}
+      button{background:#1f6feb; color:white; border:0; padding:10px 14px; border-radius:10px; cursor:pointer}
+      button.secondary{background:#263241}
+      .good{color:#67e8f9}
+      .bad{color:#f87171}
+      pre{white-space:pre-wrap; word-break:break-word; background:#0b0e12; padding:10px; border-radius:8px; border:1px solid #263241}
+      .grid{display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap:16px}
+      @media (max-width:800px){ .grid{ grid-template-columns: 1fr } }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+        <!-- was: <script type="module" src="/src/App.jsx"></script> -->
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
