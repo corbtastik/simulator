@@ -1,3 +1,4 @@
+// server/server.js
 import express from 'express';
 import cors from 'cors';
 import { CONFIG } from './config.js';
@@ -5,12 +6,18 @@ import { buildRoutes } from './routes.js';
 import { initSimulator } from './simulator.js';
 import { closeDB } from './db.js';
 
+// Optional: expose runState on app.locals for easy access in routes/status pages
+import { getRunState } from './runState.js';
+
 async function main() {
   await initSimulator();
 
   const app = express();
   app.use(express.json({ limit: '1mb' }));
   app.use(cors({ origin: CONFIG.ALLOWED_ORIGIN }));
+
+  // make run state visible to any middleware/route via req.app.locals
+  app.locals.getRunState = getRunState;
 
   app.use('/', buildRoutes());
 

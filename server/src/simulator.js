@@ -1,9 +1,10 @@
-// server/src/simulator.js
-import { CONFIG } from './config.js';
-import { connectDB } from './db.js';
+// server/simulator.js
+import { CONFIG, /* add export in config.js if not already */ buildSimRunId } from './config.js';
+import { connectDB, insertSimRun, endSimRun } from './db.js';
 import { loadCityModel, pickCity, jitterPoint } from './cityModel.js';
 import { makeRNG } from './rng.js';
 import { makeServiceIssue } from './serviceIssues.js';
+import { getRunState, setCurrentSimRun, clearCurrentSimRun } from './runState.js';
 
 const SIM = {
   running: false,
@@ -14,7 +15,7 @@ const SIM = {
     seed: null,
     concurrency: 1,
   },
-  workers: [],
+  workers: [], // array of cancel fns
   stats: {
     cityModelSize: 0,
     insertsPerSecWindow: CONFIG.STATUS_WINDOW_SEC,
@@ -27,6 +28,7 @@ const SIM = {
 export function getStatus() {
   const { eventsPerSec, batchSize, spread, seed, concurrency } = SIM.params;
   const insertsPerSecMA = movingAverage(SIM.stats.history, SIM.stats.insertsPerSecWindow);
+  const run = getRunState();
   return {
     running: SIM.running,
     eventsPerSec,
@@ -37,6 +39,10 @@ export function getStatus() {
     cityModelSize: SIM.stats.cityModelSize,
     insertsPerSecMA,
     insertsPerSecWindow: SIM.stats.insertsPerSecWindow,
+    // run metadata (null when no active run)
+    simRunId: run.simRunId,
+    runStartedAt: run.startedAt,
+    runParams: run.params,
   };
 }
 
@@ -56,7 +62,37 @@ export async function startSimulator(input) {
   const p = validateParams(input);
   SIM.params = p;
 
-  const { coll } = await connectDB();
+  const { db, coll } = await connectDB();
+
+  // Build a stable run id and persist the sim_runs record
+  const simRunId = buildSimRunId(p.seed);
+  // keep a local copy for this run (avoid reading shared state in hot path)
+  const runId = simRunId;
+
+  await insertSimRun(db, {
+    simRunId,
+    startedAt: new Date(),
+    endedAt: null,
+    seed: p.seed ?? null,
+    epsTarget: p.eventsPerSec ?? null,
+    batchSize: p.batchSize ?? null,
+    spread: p.spread ?? null,
+    concurrency: p.concurrency ?? null,
+    cityModelSize: SIM.stats.cityModelSize,
+    appVersion: process.env.APP_VERSION || null,
+    gitSha: process.env.GIT_SHA || null,
+    notes: null,
+  });
+
+  // Cache run state so workers can stamp docs
+  setCurrentSimRun(simRunId, {
+    epsTarget: p.eventsPerSec,
+    batchSize: p.batchSize,
+    spread: p.spread,
+    seed: p.seed,
+    concurrency: p.concurrency,
+    cityModelSize: SIM.stats.cityModelSize,
+  });
 
   // Split EPS across workers deterministically
   const base = Math.floor(p.eventsPerSec / p.concurrency);
@@ -72,24 +108,48 @@ export async function startSimulator(input) {
 
   for (let i = 0; i < p.concurrency; i++) {
     const targetEps = base + (i < remainder ? 1 : 0);
-    SIM.workers.push(
-      runWorker({
-        eps: targetEps,
-        batchSize: p.batchSize,
-        spread: p.spread,
-        rand,
-        gaussian,
-        coll,
-      })
-    );
+    const cancel = runWorker({
+      eps: targetEps,
+      batchSize: p.batchSize,
+      spread: p.spread,
+      rand,
+      gaussian,
+      coll,
+      simRunId: runId,
+    });
+    SIM.workers.push(cancel);
   }
   return getStatus();
 }
 
 export async function stopSimulator() {
+  const { simRunId } = getRunState();
+
+  // signal loops to stop
   SIM.running = false;
-  // workers are cooperative; they exit their loops after current tick
-  SIM.workers = [];
+
+  // actively cancel each worker so its `alive` flips false promptly
+  try {
+    for (const cancel of SIM.workers) {
+      try { cancel?.(); } catch {}
+    }
+  } finally {
+    SIM.workers = [];
+  }
+
+  // mark run ended (non-fatal if this fails)
+  if (simRunId) {
+    const { db } = await connectDB();
+    try {
+      await endSimRun(db, simRunId);
+    } catch (err) {
+      console.error('[simulator] endSimRun failed:', err?.message || err);
+    }
+  }
+
+  // clear in-memory run state AFTER DB write
+  clearCurrentSimRun();
+
   return getStatus();
 }
 
@@ -124,7 +184,10 @@ function movingAverage(history, windowSec) {
   return Math.round(sum / len);
 }
 
-function runWorker({ eps, batchSize, spread, rand, gaussian, coll }) {
+function runWorker({ eps, batchSize, spread, rand, gaussian, coll, simRunId }) {
+  if (!simRunId) {
+    console.error('[simulator] runWorker started without simRunId');
+  }
   let alive = true;
 
   const tick = async () => {
@@ -138,9 +201,9 @@ function runWorker({ eps, batchSize, spread, rand, gaussian, coll }) {
         const docs = new Array(size);
 
         for (let i = 0; i < size; i++) {
-          const c = pickCity(SIM.model, rand);             // weighted by city.weight
-          const p = jitterPoint(c, spread, gaussian);      // Gaussian jitter scaled by c.sigmaKm * spread
-          const serviceIssue = makeServiceIssue(rand, c.name); // embedded service issue, uses city for code
+          const c = pickCity(SIM.model, rand);                  // weighted by city.weight
+          const p = jitterPoint(c, spread, gaussian);           // Gaussian jitter scaled by c.sigmaKm * spread
+          const serviceIssue = makeServiceIssue(rand, c.name);  // embedded service issue, uses city for code
 
           // Event document (deck.gl friendly + geo)
           docs[i] = {
@@ -157,10 +220,18 @@ function runWorker({ eps, batchSize, spread, rand, gaussian, coll }) {
             sigmaKm: c.sigmaKm,
             // rich embedded serviceIssue
             serviceIssue,
+            // stamp run
+            simRunId,
           };
         }
 
         try {
+          if (!simRunId) {
+            // soft-cancel this worker if we somehow lost the run id
+            console.error('[simulator] Missing simRunId; cancelling worker tick.');
+            alive = false;
+            break;
+          }
           const res = await coll.insertMany(docs, { ordered: false });
           insertedThisTick += res.insertedCount ?? docs.length;
         } catch {
@@ -179,6 +250,8 @@ function runWorker({ eps, batchSize, spread, rand, gaussian, coll }) {
       const sleepMs = Math.max(0, 1000 - elapsed);
       await sleep(sleepMs);
     }
+    // optional: debug log on worker exit
+    // console.log('[simulator] worker exit');
   };
 
   tick(); // fire and forget

@@ -20,3 +20,19 @@ export const CONFIG = {
   MAX_BATCH_SIZE: Number(process.env.MAX_BATCH_SIZE ?? 50000),
   MAX_EPS: Number(process.env.MAX_EPS ?? 1_000_000),
 };
+
+// Build a stable run id like "20251018-1830Z-s1"
+export function buildSimRunId(seed) {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const y = d.getUTCFullYear();
+  const m = pad(d.getUTCMonth() + 1);
+  const day = pad(d.getUTCDate());
+  const hh = pad(d.getUTCHours());
+  const mm = pad(d.getUTCMinutes());
+  // seconds omitted to keep runs grouped by minute; add if you prefer
+  const z = 'Z';
+  const seedPart = (seed === undefined || seed === null) ? 'srand' : `s${seed}`;
+  return `${y}${m}${day}-${hh}${mm}${z}-${seedPart}`;
+}
+
