@@ -52,6 +52,10 @@ export default function App() {
   const [seed, setSeed] = useState("");
   const [concurrency, setConcurrency] = useState(1);
 
+  // New controls
+  const [note, setNote] = useState("");                 // Sim Run Note (optional)
+  const [repairsEnabled, setRepairsEnabled] = useState(false); // Phase 2 toggle (no writes yet)
+
   // Status / UI
   const [running, setRunning] = useState(false);
   const [status, setStatus] = useState(null);
@@ -69,6 +73,7 @@ export default function App() {
       setStatus(s);
       setRunning(!!s.running);
       if (typeof s.concurrency === "number") setConcurrency(s.concurrency);
+      if (typeof s.repairsEnabled === "boolean") setRepairsEnabled(s.repairsEnabled);
     } catch {}
   }
 
@@ -78,7 +83,10 @@ export default function App() {
       batchSize: Number(batchSize),
       spread: Number(spread),
       seed: seed === "" ? null : Number(seed),
-      concurrency: Math.max(1, Number(concurrency))
+      concurrency: Math.max(1, Number(concurrency)),
+      // NEW:
+      note: note?.trim() === "" ? null : note.trim(),
+      repairsEnabled: !!repairsEnabled,
     };
     try {
       const res = await startSim(payload);
@@ -106,6 +114,10 @@ export default function App() {
   );
   const startDisabled = Number(eventsPerSec) < Number(concurrency);
 
+  const Divider = () => (
+    <div style={{ borderTop: "1px solid var(--border-color, rgba(255,255,255,0.12))", margin: "14px 0" }} />
+  );
+
   return (
     <div className="wrap">
       <div className="header-bar">
@@ -122,6 +134,20 @@ export default function App() {
 
       <div className="card" style={{ maxWidth: 980 }}>
         <h3>Simulation Controls</h3>
+
+        {/* --- Sim Run Note (top) --- */}
+        <div className="row">
+          <label>Sim Run Note</label>
+          <input
+            type="text"
+            placeholder="Why you’re running this (optional)"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            maxLength={200}
+          />
+        </div>
+
+        <Divider />
 
         <div className="row">
           <label>Incidents / sec</label>
@@ -180,6 +206,22 @@ export default function App() {
           />
         </div>
 
+        <Divider />
+
+        {/* --- repairsEnabled checkbox --- */}
+        <div className="row" style={{ alignItems: "center" }}>
+          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input
+              type="checkbox"
+              checked={repairsEnabled}
+              onChange={(e) => setRepairsEnabled(e.target.checked)}
+            />
+            Enable Repair
+          </label>
+        </div>
+
+        <Divider />
+
         <div className="row" style={{ gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           {!running ? (
             <button className="primary" onClick={onStart} disabled={startDisabled}
@@ -223,6 +265,9 @@ export default function App() {
     spread: Number(spread),
     seed: seed?.trim() === "" ? null : seed.trim(),
     concurrency: Number(concurrency),
+    // expose current UI choices locally when not connected
+    repairsEnabled: !!repairsEnabled,
+    note: note?.trim() === "" ? null : note.trim(),
     cityModelSize: 0,
     insertsPerSecMA: 0,
     insertsPerSecWindow: 10,
