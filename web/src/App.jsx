@@ -42,6 +42,20 @@ function Toast({ toast }) {
   );
 }
 
+/** Normalize responses from API:
+ * - New shape: { ok, simulator, scheduler }
+ * - Legacy shape: simulator fields at top-level (no scheduler)
+ */
+function normalizeStatusResponse(resp) {
+  if (resp && typeof resp === "object" && "simulator" in resp) {
+    const simulator = resp.simulator ?? {};
+    const scheduler = resp.scheduler ?? null;
+    return { simulator, scheduler };
+  }
+  // Legacy flat response
+  return { simulator: resp ?? {}, scheduler: null };
+}
+
 export default function App() {
   const { theme, toggle } = useTheme();
 
@@ -58,7 +72,7 @@ export default function App() {
 
   // Status / UI
   const [running, setRunning] = useState(false);
-  const [status, setStatus] = useState(null);
+  const [status, setStatus] = useState(null); // we'll keep merged { ...simulator, scheduler }
   const { toast, show } = useToast();
 
   useEffect(() => {
@@ -69,12 +83,23 @@ export default function App() {
 
   async function refresh() {
     try {
-      const s = await getStatus();
-      setStatus(s);
-      setRunning(!!s.running);
-      if (typeof s.concurrency === "number") setConcurrency(s.concurrency);
-      if (typeof s.repairsEnabled === "boolean") setRepairsEnabled(s.repairsEnabled);
-    } catch {}
+      const resp = await getStatus();
+      const { simulator, scheduler } = normalizeStatusResponse(resp);
+      // Keep UI expectations
+      setRunning(!!simulator.running);
+      if (typeof simulator.concurrency === "number") setConcurrency(simulator.concurrency);
+
+      // Prefer repairsEnabled from run.params if present (server getStatus carries runParams)
+      const serverRepairs =
+        (simulator?.runParams && typeof simulator.runParams.repairsEnabled === "boolean")
+          ? simulator.runParams.repairsEnabled
+          : (typeof simulator.repairsEnabled === "boolean" ? simulator.repairsEnabled : undefined);
+      if (typeof serverRepairs === "boolean") setRepairsEnabled(serverRepairs);
+
+      setStatus({ ...simulator, scheduler });
+    } catch {
+      // noop
+    }
   }
 
   async function onStart() {
@@ -84,14 +109,17 @@ export default function App() {
       spread: Number(spread),
       seed: seed === "" ? null : Number(seed),
       concurrency: Math.max(1, Number(concurrency)),
-      // NEW:
+      // NEW / carried:
       note: note?.trim() === "" ? null : note.trim(),
       repairsEnabled: !!repairsEnabled,
+      // optional future: repairConfig overrides can be added here
+      // repairConfig: { cadenceMs: 1000, budgetPerTick: 5 }
     };
     try {
-      const res = await startSim(payload);
-      setRunning(res.running);
-      setStatus(res);
+      const resp = await startSim(payload);
+      const { simulator, scheduler } = normalizeStatusResponse(resp);
+      setRunning(!!simulator.running);
+      setStatus({ ...simulator, scheduler });
       show("Simulator started", "success");
     } catch {
       show("Failed to start simulator", "error");
@@ -100,9 +128,10 @@ export default function App() {
 
   async function onStop() {
     try {
-      const res = await stopSim();
-      setRunning(res.running);
-      setStatus(res);
+      const resp = await stopSim();
+      const { simulator, scheduler } = normalizeStatusResponse(resp);
+      setRunning(!!simulator.running);
+      setStatus({ ...simulator, scheduler });
       show("Simulator stopped", "success");
     } catch {
       show("Failed to stop simulator", "error");
@@ -117,6 +146,16 @@ export default function App() {
   const Divider = () => (
     <div style={{ borderTop: "1px solid var(--border-color, rgba(255,255,255,0.12))", margin: "14px 0" }} />
   );
+
+  // Scheduler badge (preview): show when running
+  const schedulerState = status?.scheduler?.state ?? "idle";
+  const schedulerPill =
+    <span
+      className={`pill ${schedulerState === "running" ? "pill--status-ok" : "pill--status"}`}
+      title="Phase-2 preview repair scheduler"
+    >
+      Repairs (preview): <b className="mono">{schedulerState}</b>
+    </span>;
 
   return (
     <div className="wrap">
@@ -238,6 +277,9 @@ export default function App() {
             {running ? "Running" : "Stopped"}
           </span>
 
+          {/* Scheduler preview pill */}
+          {schedulerPill}
+
           {/* IPS per worker */}
           <span className="pill pill--info" title="Incidents/sec divided among workers">
             IPS/Worker: <b className="mono">~{ipsPerWorker}</b>
@@ -258,6 +300,7 @@ export default function App() {
 
         <pre className="status-json">
 {JSON.stringify(
+  // Keep a single JSON blob for easy debugging: simulator fields + nested scheduler
   status ?? {
     running: false,
     eventsPerSec: Number(eventsPerSec),
@@ -271,6 +314,7 @@ export default function App() {
     cityModelSize: 0,
     insertsPerSecMA: 0,
     insertsPerSecWindow: 10,
+    scheduler: { state: "idle" },
   },
   null,
   2

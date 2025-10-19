@@ -14,6 +14,10 @@ const SIM = {
     spread: 2,
     seed: null,
     concurrency: 1,
+    // NOTE: these two are carried through at start (persisted to sim_runs),
+    // not used by the hot path here (Phase-2 scheduler will use later)
+    note: null,
+    repairsEnabled: false,
   },
   workers: [], // array of cancel fns
   stats: {
@@ -21,6 +25,7 @@ const SIM = {
     insertsPerSecWindow: CONFIG.STATUS_WINDOW_SEC,
     history: [], // per-second inserted doc counts (rolling)
     lastTickInserted: 0,
+    activeWorkers: 0, // <— NEW: tracked for graceful stop
   },
   model: null,
 };
@@ -39,6 +44,7 @@ export function getStatus() {
     cityModelSize: SIM.stats.cityModelSize,
     insertsPerSecMA,
     insertsPerSecWindow: SIM.stats.insertsPerSecWindow,
+    activeWorkers: SIM.stats.activeWorkers,
     // run metadata (null when no active run)
     simRunId: run.simRunId,
     runStartedAt: run.startedAt,
@@ -60,6 +66,9 @@ export async function startSimulator(input) {
 
   // Validate & fix params
   const p = validateParams(input);
+  // carry-through (non-hot-path) fields; harmless if undefined
+  p.note = typeof input?.note === 'string' ? input.note : null;
+  p.repairsEnabled = !!input?.repairsEnabled;
   SIM.params = p;
 
   const { db, coll } = await connectDB();
@@ -81,7 +90,11 @@ export async function startSimulator(input) {
     cityModelSize: SIM.stats.cityModelSize,
     appVersion: process.env.APP_VERSION || null,
     gitSha: process.env.GIT_SHA || null,
-    notes: null,
+    // NEW: carry through from request
+    notes: p.note ?? null,
+    repairsEnabled: p.repairsEnabled ?? false,
+    // Optional scaffold for Phase-2 plan tracking (safe to leave here)
+    repairPlan: { version: '2.0.0-phase2' },
   });
 
   // Cache run state so workers can stamp docs
@@ -92,6 +105,9 @@ export async function startSimulator(input) {
     seed: p.seed,
     concurrency: p.concurrency,
     cityModelSize: SIM.stats.cityModelSize,
+    // helpful for status pages
+    note: p.note ?? null,
+    repairsEnabled: p.repairsEnabled ?? false,
   });
 
   // Split EPS across workers deterministically
@@ -102,6 +118,7 @@ export async function startSimulator(input) {
   SIM.stats.history = [];
   SIM.stats.lastTickInserted = 0;
   SIM.workers = [];
+  SIM.stats.activeWorkers = 0;
 
   // One RNG shared across workers keeps determinism for a given seed
   const { rand, gaussian } = makeRNG(p.seed);
@@ -125,6 +142,11 @@ export async function startSimulator(input) {
 export async function stopSimulator() {
   const { simRunId } = getRunState();
 
+  // Idempotent: if not running and no active workers, return status as-is
+  if (!SIM.running && SIM.stats.activeWorkers === 0) {
+    return getStatus();
+  }
+
   // signal loops to stop
   SIM.running = false;
 
@@ -135,6 +157,14 @@ export async function stopSimulator() {
     }
   } finally {
     SIM.workers = [];
+  }
+
+  // Wait (bounded) for workers to quiesce to reduce "flaky stop" symptoms
+  const GUARD_MS = Number(CONFIG?.STOP_GUARD_MS ?? 2000);
+  const POLL_MS = 25;
+  const startWait = Date.now();
+  while (SIM.stats.activeWorkers > 0 && (Date.now() - startWait) < GUARD_MS) {
+    await sleep(POLL_MS);
   }
 
   // mark run ended (non-fatal if this fails)
@@ -149,6 +179,15 @@ export async function stopSimulator() {
 
   // clear in-memory run state AFTER DB write
   clearCurrentSimRun();
+
+  // Emit a tiny stop summary (best-effort)
+  const insertsPerSecMA = movingAverage(SIM.stats.history, SIM.stats.insertsPerSecWindow);
+  console.log('[simulator] run-closed', {
+    simRunId,
+    activeWorkers: SIM.stats.activeWorkers,
+    insertsPerSecMA,
+    guardUsedMs: Date.now() - startWait,
+  });
 
   return getStatus();
 }
@@ -189,69 +228,73 @@ function runWorker({ eps, batchSize, spread, rand, gaussian, coll, simRunId }) {
     console.error('[simulator] runWorker started without simRunId');
   }
   let alive = true;
+  SIM.stats.activeWorkers += 1; // track for graceful stop
 
   const tick = async () => {
-    while (SIM.running && alive) {
-      const start = Date.now();
-      const batches = Math.max(1, Math.ceil(eps / batchSize));
-      let insertedThisTick = 0;
+    try {
+      while (SIM.running && alive) {
+        const start = Date.now();
+        const batches = Math.max(1, Math.ceil(eps / batchSize));
+        let insertedThisTick = 0;
 
-      for (let b = 0; b < batches; b++) {
-        const size = Math.min(batchSize, eps - b * batchSize) || batchSize;
-        const docs = new Array(size);
+        for (let b = 0; b < batches; b++) {
+          const size = Math.min(batchSize, eps - b * batchSize) || batchSize;
+          const docs = new Array(size);
 
-        for (let i = 0; i < size; i++) {
-          const c = pickCity(SIM.model, rand);                  // weighted by city.weight
-          const p = jitterPoint(c, spread, gaussian);           // Gaussian jitter scaled by c.sigmaKm * spread
-          const serviceIssue = makeServiceIssue(rand, c.name);  // embedded service issue, uses city for code
+          for (let i = 0; i < size; i++) {
+            const c = pickCity(SIM.model, rand);                  // weighted by city.weight
+            const p = jitterPoint(c, spread, gaussian);           // Gaussian jitter scaled by c.sigmaKm * spread
+            const serviceIssue = makeServiceIssue(rand, c.name);  // embedded service issue, uses city for code
 
-          // Event document (deck.gl friendly + geo)
-          docs[i] = {
-            type: 'incident',
-            ts: new Date(),
-            // geo for geospatial queries
-            loc: { type: 'Point', coordinates: [p.lng, p.lat] },
-            // flat position fields for deck.gl layers
-            city: c.name,
-            lat: p.lat,
-            lng: p.lng,
-            // carry model-driven knobs for visualization
-            weight: c.weight,
-            sigmaKm: c.sigmaKm,
-            // rich embedded serviceIssue
-            serviceIssue,
-            // stamp run
-            simRunId,
-          };
-        }
-
-        try {
-          if (!simRunId) {
-            // soft-cancel this worker if we somehow lost the run id
-            console.error('[simulator] Missing simRunId; cancelling worker tick.');
-            alive = false;
-            break;
+            // Event document (deck.gl friendly + geo)
+            docs[i] = {
+              type: 'incident',
+              ts: new Date(),
+              // geo for geospatial queries
+              loc: { type: 'Point', coordinates: [p.lng, p.lat] },
+              // flat position fields for deck.gl layers
+              city: c.name,
+              lat: p.lat,
+              lng: p.lng,
+              // carry model-driven knobs for visualization
+              weight: c.weight,
+              sigmaKm: c.sigmaKm,
+              // rich embedded serviceIssue
+              serviceIssue,
+              // stamp run
+              simRunId,
+            };
           }
-          const res = await coll.insertMany(docs, { ordered: false });
-          insertedThisTick += res.insertedCount ?? docs.length;
-        } catch {
-          // treat as best-effort; assume all attempted
-          insertedThisTick += docs.length;
+
+          try {
+            if (!simRunId) {
+              // soft-cancel this worker if we somehow lost the run id
+              console.error('[simulator] Missing simRunId; cancelling worker tick.');
+              alive = false;
+              break;
+            }
+            const res = await coll.insertMany(docs, { ordered: false });
+            insertedThisTick += res.insertedCount ?? docs.length;
+          } catch {
+            // treat as best-effort; assume all attempted
+            insertedThisTick += docs.length;
+          }
         }
-      }
 
-      SIM.stats.history.push(insertedThisTick);
-      if (SIM.stats.history.length > 300) {
-        SIM.stats.history.splice(0, SIM.stats.history.length - 300);
-      }
+        SIM.stats.history.push(insertedThisTick);
+        if (SIM.stats.history.length > 300) {
+          SIM.stats.history.splice(0, SIM.stats.history.length - 300);
+        }
 
-      // aim for 1 Hz ticks
-      const elapsed = Date.now() - start;
-      const sleepMs = Math.max(0, 1000 - elapsed);
-      await sleep(sleepMs);
+        // aim for 1 Hz ticks
+        const elapsed = Date.now() - start;
+        const sleepMs = Math.max(0, 1000 - elapsed);
+        await sleep(sleepMs);
+      }
+    } finally {
+      // worker exit
+      SIM.stats.activeWorkers = Math.max(0, SIM.stats.activeWorkers - 1);
     }
-    // optional: debug log on worker exit
-    // console.log('[simulator] worker exit');
   };
 
   tick(); // fire and forget
