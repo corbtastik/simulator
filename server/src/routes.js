@@ -1,7 +1,12 @@
-// server/routes.js
+// server/src/routes.js
 import express from 'express';
 import { getStatus, startSimulator, stopSimulator } from './simulator.js';
-import { connectDB, ensureSimRunsIndexes } from './db.js';
+import {
+  connectDB,
+  ensureSimRunsIndexes,
+  ensureFixEventsIndexes,
+  countFixEvents,
+} from './db.js';
 import { repairScheduler } from './repairScheduler.js';
 
 // Ensure DB + indexes once when routes are built
@@ -11,6 +16,9 @@ async function bootstrapDbOnce() {
   const { db } = await connectDB();
   await ensureSimRunsIndexes(db).catch(err => {
     console.error('[routes] ensureSimRunsIndexes failed:', err);
+  });
+  await ensureFixEventsIndexes(db).catch(err => {
+    console.error('[routes] ensureFixEventsIndexes failed:', err);
   });
   bootstrapped = true;
 }
@@ -27,7 +35,25 @@ export function buildRoutes() {
     try {
       const simulator = getStatus();
       const scheduler = repairScheduler.status();
-      res.json({ ok: true, simulator, scheduler });
+
+      // Optional: include a DB count of persisted fix_events for the current run
+      let persistedDb = null;
+      try {
+        const { db } = await connectDB();
+        const simRunId =
+          simulator?.simRunId ||
+          req.app.locals.getRunState?.()?.simRunId ||
+          scheduler?.simRunId ||
+          null;
+        if (simRunId) {
+          persistedDb = await countFixEvents(db, { simRunId });
+        }
+      } catch (err) {
+        // soft-fail; keep status responsive
+        console.warn('[routes]/status persistedDb error:', err?.message || err);
+      }
+
+      res.json({ ok: true, simulator, scheduler, persistedDb });
     } catch (e) {
       res.status(500).json({ ok: false, error: e.message ?? 'status failed' });
     }
@@ -41,16 +67,23 @@ export function buildRoutes() {
 
       let scheduler = repairScheduler.status();
 
-      // Conditionally start the preview scheduler
+      // Conditionally start the repair scheduler (Phase 3-capable)
       if (repairsEnabled === true) {
         const run = req.app.locals.getRunState?.();
         scheduler = repairScheduler.start(
           { simRunId: run?.simRunId, params: { seed: run?.params?.seed } },
-          repairConfig // optional: { cadenceMs, budgetPerTick, policy, version, recentWindowSec }
+          // repairConfig may include: { cadenceMs, budgetPerTick, policy, version, recentWindowSec, persist }
+          repairConfig
         );
       }
 
-      res.json({ ok: true, simulator, scheduler });
+      // Also return current DB count for convenience
+      const { db } = await connectDB();
+      const persistedDb = simulator?.simRunId
+        ? await countFixEvents(db, { simRunId: simulator.simRunId })
+        : null;
+
+      res.json({ ok: true, simulator, scheduler, persistedDb });
     } catch (e) {
       res.status(e.status ?? 500).json({ ok: false, error: e.message ?? 'start failed' });
     }
@@ -69,7 +102,21 @@ export function buildRoutes() {
       const simulator = await Promise.race([stopPromise, timeout]);
 
       const scheduler = repairScheduler.status();
-      res.json({ ok: true, simulator, scheduler });
+
+      // Include a final persisted DB count for the last run if we still know it
+      let persistedDb = null;
+      try {
+        const { db } = await connectDB();
+        const simRunId =
+          simulator?.simRunId || req.app.locals.getRunState?.()?.simRunId || null;
+        if (simRunId) {
+          persistedDb = await countFixEvents(db, { simRunId });
+        }
+      } catch (err) {
+        console.warn('[routes]/stop persistedDb error:', err?.message || err);
+      }
+
+      res.json({ ok: true, simulator, scheduler, persistedDb });
     } catch (e) {
       res.status(500).json({ ok: false, error: e.message ?? 'stop failed' });
     }

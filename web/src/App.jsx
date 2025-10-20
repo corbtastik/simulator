@@ -35,25 +35,22 @@ function useToast() {
 
 function Toast({ toast }) {
   if (!toast) return null;
-  return (
-    <div className={`toast toast--${toast.type}`}>
-      {toast.message}
-    </div>
-  );
+  return <div className={`toast toast--${toast.type}`}>{toast.message}</div>;
 }
 
 /** Normalize responses from API:
- * - New shape: { ok, simulator, scheduler }
+ * - New shape: { ok, simulator, scheduler, persistedDb? }
  * - Legacy shape: simulator fields at top-level (no scheduler)
  */
 function normalizeStatusResponse(resp) {
   if (resp && typeof resp === "object" && "simulator" in resp) {
     const simulator = resp.simulator ?? {};
     const scheduler = resp.scheduler ?? null;
-    return { simulator, scheduler };
+    const persistedDb = resp.persistedDb ?? null;
+    return { simulator, scheduler, persistedDb };
   }
   // Legacy flat response
-  return { simulator: resp ?? {}, scheduler: null };
+  return { simulator: resp ?? {}, scheduler: null, persistedDb: null };
 }
 
 export default function App() {
@@ -66,13 +63,14 @@ export default function App() {
   const [seed, setSeed] = useState("");
   const [concurrency, setConcurrency] = useState(1);
 
-  // New controls
-  const [note, setNote] = useState("");                 // Sim Run Note (optional)
-  const [repairsEnabled, setRepairsEnabled] = useState(false); // Phase 2 toggle (no writes yet)
+  // Controls
+  const [note, setNote] = useState(""); // Sim Run Note (optional)
+  const [repairsEnabled, setRepairsEnabled] = useState(false); // enable scheduler
+  const [persistRepairs, setPersistRepairs] = useState(true);  // Phase 3: write to fix_events
 
   // Status / UI
   const [running, setRunning] = useState(false);
-  const [status, setStatus] = useState(null); // we'll keep merged { ...simulator, scheduler }
+  const [status, setStatus] = useState(null); // merged { ...simulator, scheduler, persistedDb }
   const { toast, show } = useToast();
 
   useEffect(() => {
@@ -84,19 +82,23 @@ export default function App() {
   async function refresh() {
     try {
       const resp = await getStatus();
-      const { simulator, scheduler } = normalizeStatusResponse(resp);
-      // Keep UI expectations
+      const { simulator, scheduler, persistedDb } = normalizeStatusResponse(resp);
       setRunning(!!simulator.running);
       if (typeof simulator.concurrency === "number") setConcurrency(simulator.concurrency);
 
-      // Prefer repairsEnabled from run.params if present (server getStatus carries runParams)
+      // Prefer repairsEnabled from run.params if present
       const serverRepairs =
         (simulator?.runParams && typeof simulator.runParams.repairsEnabled === "boolean")
           ? simulator.runParams.repairsEnabled
           : (typeof simulator.repairsEnabled === "boolean" ? simulator.repairsEnabled : undefined);
       if (typeof serverRepairs === "boolean") setRepairsEnabled(serverRepairs);
 
-      setStatus({ ...simulator, scheduler });
+      // Only sync persist flag while the scheduler is running; otherwise keep user's choice
+      if (scheduler?.state === "running" && typeof scheduler?.persist === "boolean") {
+        setPersistRepairs(scheduler.persist);
+      }
+
+      setStatus({ ...simulator, scheduler, persistedDb });
     } catch {
       // noop
     }
@@ -109,17 +111,28 @@ export default function App() {
       spread: Number(spread),
       seed: seed === "" ? null : Number(seed),
       concurrency: Math.max(1, Number(concurrency)),
-      // NEW / carried:
+
+      // carried
       note: note?.trim() === "" ? null : note.trim(),
+
+      // Phase 2+3 flags
       repairsEnabled: !!repairsEnabled,
-      // optional future: repairConfig overrides can be added here
-      // repairConfig: { cadenceMs: 1000, budgetPerTick: 5 }
+      // Phase 3: pass persist toggle through to scheduler
+      repairConfig: { persist: !!persistRepairs },
     };
+
     try {
       const resp = await startSim(payload);
-      const { simulator, scheduler } = normalizeStatusResponse(resp);
+      const { simulator, scheduler, persistedDb } = normalizeStatusResponse(resp);
+
       setRunning(!!simulator.running);
-      setStatus({ ...simulator, scheduler });
+      setStatus({ ...simulator, scheduler, persistedDb });
+
+      // Reflect actual server persist flag if present; otherwise keep what we requested
+      const serverPersist =
+        typeof scheduler?.persist === "boolean" ? scheduler.persist : undefined;
+      setPersistRepairs(serverPersist !== undefined ? serverPersist : !!payload.repairConfig?.persist);
+
       show("Simulator started", "success");
     } catch {
       show("Failed to start simulator", "error");
@@ -129,9 +142,9 @@ export default function App() {
   async function onStop() {
     try {
       const resp = await stopSim();
-      const { simulator, scheduler } = normalizeStatusResponse(resp);
+      const { simulator, scheduler, persistedDb } = normalizeStatusResponse(resp);
       setRunning(!!simulator.running);
-      setStatus({ ...simulator, scheduler });
+      setStatus({ ...simulator, scheduler, persistedDb });
       show("Simulator stopped", "success");
     } catch {
       show("Failed to stop simulator", "error");
@@ -144,18 +157,39 @@ export default function App() {
   const startDisabled = Number(eventsPerSec) < Number(concurrency);
 
   const Divider = () => (
-    <div style={{ borderTop: "1px solid var(--border-color, rgba(255,255,255,0.12))", margin: "14px 0" }} />
+    <div
+      style={{
+        borderTop: "1px solid var(--border-color, rgba(255,255,255,0.12))",
+        margin: "14px 0",
+      }}
+    />
   );
 
-  // Scheduler badge (preview): show when running
+  // Scheduler pills
   const schedulerState = status?.scheduler?.state ?? "idle";
-  const schedulerPill =
+  const persistOn = !!status?.scheduler?.persist;
+
+  const schedulerPill = (
     <span
       className={`pill ${schedulerState === "running" ? "pill--status-ok" : "pill--status"}`}
-      title="Phase-2 preview repair scheduler"
+      title="Phase-3 repair scheduler"
     >
-      Repairs (preview): <b className="mono">{schedulerState}</b>
-    </span>;
+      Repairs: <b className="mono">{schedulerState}</b>
+    </span>
+  );
+
+  const persistPill = (
+    <span
+      className={`pill ${persistOn ? "pill--ok" : "pill--status"}`}
+      title="Persist to incidents.fix_events"
+    >
+      Persist: <b className="mono">{String(persistOn)}</b>
+    </span>
+  );
+
+  const persistedSession = status?.scheduler?.persisted ?? 0;
+  const duplicatesIgnored = status?.scheduler?.duplicatesIgnored ?? 0;
+  const persistedDb = status?.persistedDb ?? null;
 
   return (
     <div className="wrap">
@@ -247,8 +281,8 @@ export default function App() {
 
         <Divider />
 
-        {/* --- repairsEnabled checkbox --- */}
-        <div className="row" style={{ alignItems: "center" }}>
+        {/* --- Repair toggles --- */}
+        <div className="row" style={{ alignItems: "center", gap: 16 }}>
           <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <input
               type="checkbox"
@@ -257,28 +291,48 @@ export default function App() {
             />
             Enable Repair
           </label>
+
+          <label
+            style={{ display: "flex", gap: 8, alignItems: "center", opacity: repairsEnabled ? 1 : 0.6 }}
+            title="When ON, writes WOULD_FIX candidates to incidents.fix_events"
+          >
+            <input
+              type="checkbox"
+              checked={persistRepairs}
+              disabled={!repairsEnabled}
+              onChange={(e) => setPersistRepairs(e.target.checked)}
+            />
+            Persist repairs
+          </label>
         </div>
 
         <Divider />
 
         <div className="row" style={{ gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           {!running ? (
-            <button className="primary" onClick={onStart} disabled={startDisabled}
-              title={startDisabled ? "Incidents/sec must be ≥ concurrency" : ""}>
+            <button
+              className="primary"
+              onClick={onStart}
+              disabled={startDisabled}
+              title={startDisabled ? "Incidents/sec must be ≥ concurrency" : ""}
+            >
               Start Simulator
             </button>
           ) : (
-            <button onClick={onStop} className="secondary">Stop</button>
+            <button onClick={onStop} className="secondary">
+              Stop
+            </button>
           )}
-          <button className="secondary" onClick={refresh}>Refresh Status</button>
+          <button className="secondary" onClick={refresh}>
+            Refresh Status
+          </button>
 
-          {/* Status pill */}
+          {/* Status pills */}
           <span className={`pill ${running ? "pill--status-ok" : "pill--status"}`}>
             {running ? "Running" : "Stopped"}
           </span>
-
-          {/* Scheduler preview pill */}
           {schedulerPill}
+          {persistPill}
 
           {/* IPS per worker */}
           <span className="pill pill--info" title="Incidents/sec divided among workers">
@@ -286,14 +340,33 @@ export default function App() {
           </span>
 
           {/* Real IPS MA */}
-          <span className="pill pill--ok" title={`Moving average over ${status?.insertsPerSecWindow ?? 10}s`}>
+          <span
+            className="pill pill--ok"
+            title={`Moving average over ${status?.insertsPerSecWindow ?? 10}s`}
+          >
             Real IPS (MA): <b className="mono">{status?.insertsPerSecMA ?? 0}</b>
           </span>
 
           {/* Cities count */}
           {typeof status?.cityModelSize === "number" && (
-            <span className="pill pill--blue" title="Number of cities loaded on the server at startup">
+            <span
+              className="pill pill--blue"
+              title="Number of cities loaded on the server at startup"
+            >
               Cities: <b className="mono">{status.cityModelSize}</b>
+            </span>
+          )}
+
+          {/* Persist metrics */}
+          <span className="pill pill--info" title="Rows inserted this session (since start)">
+            Persisted: <b className="mono">{persistedSession}</b>
+          </span>
+          <span className="pill" title="Duplicates ignored by unique index">
+            Dupes: <b className="mono">{duplicatesIgnored}</b>
+          </span>
+          {persistedDb !== null && (
+            <span className="pill" title="DB count for current simRunId">
+              DB Count: <b className="mono">{persistedDb}</b>
             </span>
           )}
         </div>
@@ -310,11 +383,12 @@ export default function App() {
     concurrency: Number(concurrency),
     // expose current UI choices locally when not connected
     repairsEnabled: !!repairsEnabled,
+    persistRepairs: !!persistRepairs,
     note: note?.trim() === "" ? null : note.trim(),
     cityModelSize: 0,
     insertsPerSecMA: 0,
     insertsPerSecWindow: 10,
-    scheduler: { state: "idle" },
+    scheduler: { state: "idle", persist: !!persistRepairs, persisted: 0, duplicatesIgnored: 0 },
   },
   null,
   2

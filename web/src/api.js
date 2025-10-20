@@ -31,7 +31,13 @@ export async function getStatus() {
 }
 
 export async function startSim(payload) {
-  // payload: { eventsPerSec, batchSize, spread, seed|null, concurrency, note|null, repairsEnabled:boolean }
+  // payload may include:
+  // {
+  //   eventsPerSec, batchSize, spread, seed|null, concurrency,
+  //   note|null,
+  //   repairsEnabled: boolean,
+  //   repairConfig: { persist?: boolean, cadenceMs?, budgetPerTick?, recentWindowSec? }
+  // }
   return http('/start', { method: 'POST', body: payload });
 }
 

@@ -1,4 +1,4 @@
-// server/db.js
+// server/src/db.js
 import { MongoClient } from 'mongodb';
 import { CONFIG } from './config.js';
 
@@ -77,6 +77,71 @@ export async function endSimRun(passedDb, simRunId) {
     { simRunId },
     { $set: { endedAt: new Date() } }
   );
+}
+
+/* ------------------------------------------------------------------
+ * Phase 3: fix_events persistence helpers & indexes
+ * ------------------------------------------------------------------*/
+
+/**
+ * Ensure indexes for incidents.fix_events (Phase 3).
+ * - Uniqueness: deterministicKey (default) or compound
+ * - TTL on decidedAt if FIX_TTL_DAYS > 0
+ * Call once on boot after connectDB().
+ */
+export async function ensureFixEventsIndexes(passedDb) {
+  const _db = passedDb || getDb();
+  const fixColl = _db.collection(CONFIG.FIX_COLL_NAME);
+
+  // Uniqueness
+  if ((CONFIG.FIX_UNIQUE_MODE ?? 'deterministicKey') === 'deterministicKey') {
+    await fixColl.createIndex({ deterministicKey: 1 }, { name: 'uniq_dKey', unique: true });
+  } else {
+    await fixColl.createIndex(
+      { simRunId: 1, incidentId: 1, action: 1, version: 1 },
+      { name: 'uniq_compound', unique: true }
+    );
+  }
+
+  // Query helper
+  await fixColl.createIndex({ simRunId: 1, decidedAt: -1 }, { name: 'simRunId_decidedAt' });
+
+  // TTL (optional)
+  const ttlDays = Number(CONFIG.FIX_TTL_DAYS ?? 0);
+  if (Number.isFinite(ttlDays) && ttlDays > 0) {
+    await fixColl.createIndex(
+      { decidedAt: 1 },
+      { name: 'ttl_decidedAt', expireAfterSeconds: ttlDays * 24 * 60 * 60 }
+    );
+  }
+}
+
+/**
+ * Insert a fix_event with insert-only semantics.
+ * Duplicate key errors (E11000) are treated as success (duplicate: true).
+ */
+export async function insertFixEvent(passedDb, doc) {
+  const _db = passedDb || getDb();
+  const fixColl = _db.collection(CONFIG.FIX_COLL_NAME);
+  try {
+    await fixColl.insertOne(doc, { bypassDocumentValidation: true });
+    return { ok: true, inserted: 1, duplicate: false };
+  } catch (err) {
+    if (err?.code === 11000) {
+      return { ok: true, inserted: 0, duplicate: true };
+    }
+    throw err;
+  }
+}
+
+/**
+ * Count fix_events (optionally filtered by simRunId).
+ */
+export async function countFixEvents(passedDb, { simRunId } = {}) {
+  const _db = passedDb || getDb();
+  const fixColl = _db.collection(CONFIG.FIX_COLL_NAME);
+  const filter = simRunId ? { simRunId } : {};
+  return fixColl.countDocuments(filter);
 }
 
 export async function closeDB() {
