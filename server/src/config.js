@@ -38,6 +38,22 @@ export const CONFIG = {
 
   // Default feature flag for persistence (can be overridden per /start via repairConfig.persist)
   FIX_PERSIST_DEFAULT: envBool(process.env.FIX_PERSIST_DEFAULT, false),
+
+  REPAIR: {
+    // scheduler loop
+    cadenceMs: 1000,
+    budgetPerTick: 5,
+    recentWindowSec: 30,
+
+    // delay model
+    delayMedianSec: 60,      // 1 minute median delay
+    delayP95Sec: 150,        // 2.5 minutes delay at 95th percentile
+    delayJitterSec: 10,
+    pFixProbability: 0.92,   // 92% of incidents get fixed in-window
+
+    // safety cap (seconds). You can also set REPAIR_MAX_DELAY_SEC env var.
+    maxDelaySec: 300         // 5 minutes max delay
+  }
 };
 
 // Build a stable run id like "20251018-1830Z-s1"

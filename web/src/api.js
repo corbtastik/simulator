@@ -1,3 +1,4 @@
+// web/src/api.js
 const BASE = import.meta.env.VITE_SIM_BASE || 'http://localhost:5050';
 
 async function http(path, { method = 'GET', body, headers, timeoutMs = 15000 } = {}) {
@@ -36,9 +37,21 @@ export async function startSim(payload) {
   //   eventsPerSec, batchSize, spread, seed|null, concurrency,
   //   note|null,
   //   repairsEnabled: boolean,
-  //   repairConfig: { persist?: boolean, cadenceMs?, budgetPerTick?, recentWindowSec? }
+  //   // repairConfig is optional and may include tuning knobs, but NOT 'persist'
+  //   // e.g. repairConfig: { cadenceMs?, budgetPerTick?, recentWindowSec?, delayMedianSec?, delayP95Sec?, delayJitterSec?, pFixProbability?, maxDelaySec? }
   // }
-  return http('/start', { method: 'POST', body: payload });
+  const body = { ...(payload || {}) };
+
+  // Safety: strip deprecated/unsupported 'persist' if a caller still sends it.
+  if (body.repairConfig && typeof body.repairConfig === 'object') {
+    const { persist, ...rest } = body.repairConfig;
+    body.repairConfig = rest;
+    if (Object.keys(body.repairConfig).length === 0) {
+      delete body.repairConfig;
+    }
+  }
+
+  return http('/start', { method: 'POST', body });
 }
 
 export async function stopSim() {

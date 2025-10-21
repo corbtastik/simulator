@@ -27,3 +27,20 @@ function boxMuller(rand) {
     return u * mul;
   };
 }
+
+// Given desired median (m) and p95, compute mu/sigma for log-normal, then sample
+export function sampleLogNormal(rand, { medianSec, p95Sec }) {
+  const m = medianSec;
+  const p95 = p95Sec;
+  // log-normal relationships:
+  // median = exp(mu), p95 = exp(mu + 1.64485*sigma)
+  const mu = Math.log(m);
+  const sigma = (Math.log(p95) - mu) / 1.64485;
+  // Box–Muller for standard normal using our seeded rand()
+  const u1 = Math.max(rand(), Number.EPSILON);
+  const u2 = Math.max(rand(), Number.EPSILON);
+  const z = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+  const ln = Math.exp(mu + sigma * z);
+  return Math.max(1, Math.round(ln)); // seconds, at least 1s
+}
+

@@ -56,8 +56,9 @@ export async function ensureSimRunsIndexes(passedDb) {
   // 1) Unique run identifier so we can audit/close runs cleanly.
   await _db.collection('sim_runs').createIndex({ simRunId: 1 }, { unique: true });
 
-  // 2) Query helpers for events per run.
-  await _db.collection(CONFIG.COLL_NAME).createIndex({ simRunId: 1, _id: 1 });
+  // 2) Query helpers for events per run on the ingest collection.
+  //    Prefer ts over _id for time-sorted reads.
+  await _db.collection(CONFIG.COLL_NAME).createIndex({ simRunId: 1, ts: -1 }, { name: 'simRunId_ts' });
 }
 
 /**
@@ -80,56 +81,58 @@ export async function endSimRun(passedDb, simRunId) {
 }
 
 /* ------------------------------------------------------------------
- * Phase 3: fix_events persistence helpers & indexes
+ * Phase 3/4: fix_events persistence helpers & indexes (NEW SHAPE)
  * ------------------------------------------------------------------*/
 
 /**
- * Ensure indexes for incidents.fix_events (Phase 3).
- * - Uniqueness: deterministicKey (default) or compound
- * - TTL on decidedAt if FIX_TTL_DAYS > 0
- * Call once on boot after connectDB().
+ * Ensure indexes for incidents.fix_events (current schema).
+ *
+ * - Unique: one fix per (simRunId, incidentId)
+ * - Helper:   { simRunId: 1, ts: -1 }
+ * - Optional TTL on ts if FIX_TTL_DAYS > 0
+ *
+ * NOTE: This intentionally does NOT create the old deterministicKey/decidedAt indexes.
+ *       If those exist from previous runs, drop them once manually or via a migration.
  */
 export async function ensureFixEventsIndexes(passedDb) {
   const _db = passedDb || getDb();
   const fixColl = _db.collection(CONFIG.FIX_COLL_NAME);
 
-  // Uniqueness
-  if ((CONFIG.FIX_UNIQUE_MODE ?? 'deterministicKey') === 'deterministicKey') {
-    await fixColl.createIndex({ deterministicKey: 1 }, { name: 'uniq_dKey', unique: true });
-  } else {
-    await fixColl.createIndex(
-      { simRunId: 1, incidentId: 1, action: 1, version: 1 },
-      { name: 'uniq_compound', unique: true }
-    );
-  }
+  // Uniqueness: one fix per incident per run
+  await fixColl.createIndex(
+    { simRunId: 1, incidentId: 1 },
+    { name: 'uniq_fix_per_run_incident', unique: true }
+  );
 
-  // Query helper
-  await fixColl.createIndex({ simRunId: 1, decidedAt: -1 }, { name: 'simRunId_decidedAt' });
+  // Query helper: newest fixes within a run
+  await fixColl.createIndex({ simRunId: 1, ts: -1 }, { name: 'fix_by_run_ts' });
 
-  // TTL (optional)
+  // TTL (optional) — base on ts
   const ttlDays = Number(CONFIG.FIX_TTL_DAYS ?? 0);
   if (Number.isFinite(ttlDays) && ttlDays > 0) {
     await fixColl.createIndex(
-      { decidedAt: 1 },
-      { name: 'ttl_decidedAt', expireAfterSeconds: ttlDays * 24 * 60 * 60 }
+      { ts: 1 },
+      { name: 'ttl_ts', expireAfterSeconds: ttlDays * 24 * 60 * 60 }
     );
   }
 }
 
 /**
  * Insert a fix_event with insert-only semantics.
- * Duplicate key errors (E11000) are treated as success (duplicate: true).
+ * Duplicate key errors (E11000) are treated as duplicate: true.
  */
 export async function insertFixEvent(passedDb, doc) {
   const _db = passedDb || getDb();
   const fixColl = _db.collection(CONFIG.FIX_COLL_NAME);
   try {
-    await fixColl.insertOne(doc, { bypassDocumentValidation: true });
-    return { ok: true, inserted: 1, duplicate: false };
+    const res = await fixColl.insertOne(doc, { bypassDocumentValidation: true });
+    return { ok: true, inserted: !!res?.acknowledged, duplicate: false };
   } catch (err) {
     if (err?.code === 11000) {
       return { ok: true, inserted: 0, duplicate: true };
     }
+    // Log non-dup errors so caller doesn't miscount them as duplicates
+    console.error('[db.insertFixEvent] error:', err?.message || err);
     throw err;
   }
 }

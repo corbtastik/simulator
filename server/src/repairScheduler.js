@@ -1,34 +1,68 @@
 // server/src/repairScheduler.js
-// Phase-3 Repair Scheduler (preview + optional DB persistence to fix_events)
+// Repair Scheduler with REALISTIC DELAYS -> writes to fix_events after a delay
 //
 // API:
-//   repairScheduler.start(simRunContext, config?)
+//   repairScheduler.start(simRunContext, config?)   // runtime overrides allowed
+//   repairScheduler.configure(config?)              // tweak while running
 //   repairScheduler.stop()
 //   repairScheduler.status()
-//   repairScheduler.configure(config?)  // new (optional): override persist at runtime
 //
-// Behavior:
-// - Deterministic (seeded) selection of recent incidents for WOULD_FIX previews.
-// - "infra-first" policy by default; can be extended later.
-// - Emits JSON line logs to stdout.
-// - (Phase 3) When persistence is enabled, insert a lean document into incidents.fix_events
-//   with insert-only semantics (duplicates ignored via unique index).
+// Precedence of settings (highest → lowest):
+//   start()/configure() overrides  >  CONFIG.REPAIR  > internal fallbacks
+//
+// Notes:
+// - Deterministic selection (seeded) for WOULD_FIX preview logs.
+// - Schedules delayed inserts into incidents.fix_events with type:"fix".
+// - Log-normal delay model + jitter + probability gate.
+// - Max delay clamped to avoid Node's 32-bit setTimeout overflow.
 
 import { connectDB, insertFixEvent } from './db.js';
 import { CONFIG } from './config.js';
 import { makeRNG } from './rng.js';
 
-const DEFAULTS = {
-  cadenceMs: 1000,           // tick every 1s
-  budgetPerTick: 5,          // max candidates to emit per tick
-  policy: 'infra-first',     // placeholder for future strategies
-  version: '2.0.0-phase2',   // surfaced in logs/status
-  recentWindowSec: 30,       // look back this many seconds when choosing candidates
-  persist: CONFIG.FIX_PERSIST_DEFAULT === true, // Phase 3: default from env/config
+const CR = (CONFIG && CONFIG.REPAIR) || {};
+
+// Internal fallbacks (only used if not provided by CONFIG.REPAIR or overrides)
+const FALLBACKS = {
+  cadenceMs: 1000,
+  budgetPerTick: 5,
+  recentWindowSec: 30,
+  delayMedianSec: 300,
+  delayP95Sec: 1800,
+  delayJitterSec: 10,
+  pFixProbability: 0.92,
+  maxDelaySec: 2 * 60 * 60, // 2h
+  policy: 'infra-first',
+  version: '2.0.0-phase2'
 };
 
-// Heuristic set for "infrastructure" types we already use around the project.
-// If types differ at runtime, we gracefully fall back to "unknown".
+// Build defaults from CONFIG.REPAIR with fallbacks
+const DEFAULTS = {
+  cadenceMs:        numOr(CR.cadenceMs,        FALLBACKS.cadenceMs),
+  budgetPerTick:    numOr(CR.budgetPerTick,    FALLBACKS.budgetPerTick),
+  recentWindowSec:  numOr(CR.recentWindowSec,  FALLBACKS.recentWindowSec),
+
+  delayMedianSec:   numOr(CR.delayMedianSec,   FALLBACKS.delayMedianSec),
+  delayP95Sec:      numOr(CR.delayP95Sec,      FALLBACKS.delayP95Sec),
+  delayJitterSec:   numOr(CR.delayJitterSec,   FALLBACKS.delayJitterSec),
+  pFixProbability:  numOr(CR.pFixProbability,  FALLBACKS.pFixProbability),
+
+  // allow env to override the cap if set
+  maxDelaySec:      numOr(process.env.REPAIR_MAX_DELAY_SEC, numOr(CR.maxDelaySec, FALLBACKS.maxDelaySec)),
+
+  policy:           strOr(CR.policy,           FALLBACKS.policy),
+  version:          strOr(CR.version,          FALLBACKS.version)
+};
+
+function numOr(x, d) {
+  const n = Number(x);
+  return Number.isFinite(n) ? n : d;
+}
+function strOr(x, d) {
+  return (typeof x === 'string' && x.length) ? x : d;
+}
+
+// Heuristic set for infra detection
 const INFRA_TYPES = new Set([
   'construction', 'smartcell', 'smallcell', 'backhaul',
   'datacenter', 'cloud-network', 'cloud_network', 'edge',
@@ -40,48 +74,48 @@ const SCHED = {
   simRunId: null,
   version: DEFAULTS.version,
   policy: DEFAULTS.policy,
+
   cadenceMs: DEFAULTS.cadenceMs,
   budgetPerTick: DEFAULTS.budgetPerTick,
   recentWindowSec: DEFAULTS.recentWindowSec,
-  persist: DEFAULTS.persist,      // NEW: Phase 3 feature flag
 
-  // deterministic RNG
-  rng: null,
+  delayMedianSec: DEFAULTS.delayMedianSec,
+  delayP95Sec: DEFAULTS.delayP95Sec,
+  delayJitterSec: DEFAULTS.delayJitterSec,
+  pFixProbability: DEFAULTS.pFixProbability,
+  maxDelaySec: DEFAULTS.maxDelaySec,
+
+  rngFn: null,
 
   // loop control
   timer: null,
-  ticking: false,           // prevents overlapping ticks
+  ticking: false,
 
   // metrics
   ticks: 0,
   candidatesEmitted: 0,
-  persisted: 0,             // NEW: number of rows inserted
-  duplicatesIgnored: 0,     // NEW: dup key ignores
-
-  // last snapshot
+  scheduled: 0,
+  persisted: 0,
+  duplicatesIgnored: 0,
+  droppedByProbability: 0,
   lastTickAt: null,
+
+  // active timers
+  timersByIncident: new Map(), // key: incidentId -> { t, dueAt }
 };
 
-function nowIso() {
-  return new Date().toISOString();
-}
+function nowIso() { return new Date().toISOString(); }
 
 function chooseCategoryFrom(issue) {
-  // Phase-3 still infra-only
   const t = issue?.type?.toString().toLowerCase();
   if (t && INFRA_TYPES.has(t)) return 'infrastructure';
-  if (t && /cell|tower|fiber|backhaul|datacenter|edge|transport|core/.test(t)) {
-    return 'infrastructure';
-  }
+  if (t && /cell|tower|fiber|backhaul|datacenter|edge|transport|core/.test(t)) return 'infrastructure';
   return 'infrastructure';
 }
 
 async function fetchRecentIncidents(simRunId, limit, recentWindowSec) {
   const { coll } = await connectDB();
   const since = new Date(Date.now() - recentWindowSec * 1000);
-
-  // Pull a small recent set to pick from; requires { ts: 1 } index (already ensured)
-  // and benefits from { simRunId: 1, _id: 1 } index (db.ensureSimRunsIndexes).
   const cursor = coll.find(
     { simRunId, ts: { $gte: since } },
     {
@@ -90,11 +124,9 @@ async function fetchRecentIncidents(simRunId, limit, recentWindowSec) {
       projection: { _id: 1, ts: 1, serviceIssue: 1 },
     }
   );
-
   return cursor.toArray();
 }
 
-// Fisher-Yates-style index walk using RNG to select items without replacement
 function* deterministicPicker(rngFn, items) {
   const idx = items.map((_, i) => i);
   for (let i = idx.length - 1; i >= 0; i--) {
@@ -105,26 +137,56 @@ function* deterministicPicker(rngFn, items) {
   }
 }
 
-async function persistFixCandidate(logLine) {
-  // Build the Phase-3 doc shape (lean)
-  const doc = {
-    simRunId: logLine.simRunId,
-    incidentId: logLine.incidentId,
-    category: logLine.category,        // "infrastructure"
-    action: logLine.action,            // "WOULD_FIX"
-    reason: logLine.reason,
-    policy: logLine.policy,
-    version: logLine.version,
-    deterministicKey: logLine.deterministicKey,
-    decidedAt: new Date(logLine.ts),   // ISO -> Date
-  };
+// ---- Delay model ----
+function sampleLogNormalSeconds(rngFn, { medianSec, p95Sec }) {
+  const m = Math.max(1, medianSec | 0);
+  const p95 = Math.max(m + 1, p95Sec | 0);
+  const mu = Math.log(m);
+  const sigma = (Math.log(p95) - mu) / 1.64485;
 
-  const res = await insertFixEvent(undefined, doc); // use default DB from connectDB()
-  if (res.duplicate) {
-    SCHED.duplicatesIgnored += 1;
-  } else if (res.inserted) {
-    SCHED.persisted += 1;
+  const u1 = Math.max(rngFn(), Number.EPSILON);
+  const u2 = Math.max(rngFn(), Number.EPSILON);
+  const Z_MAX = 3.5; // clamp extreme tails
+  let z = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+  if (z > Z_MAX) z = Z_MAX;
+  if (z < -Z_MAX) z = -Z_MAX;
+
+  const ln = Math.exp(mu + sigma * z);
+  return Math.max(1, Math.round(ln));
+}
+
+async function insertFixAfterDelay({ incidentId, category, simRunId, reason, policy, version }) {
+  try {
+    const res = await insertFixEvent(undefined, {
+      type: 'fix',
+      category,
+      simRunId,
+      incidentId,
+      reason,
+      policy,
+      version,
+      ts: new Date(),
+    });
+    if (res.duplicate) SCHED.duplicatesIgnored += 1;
+    else if (res.inserted) SCHED.persisted += 1;
+  } catch (e) {
+    console.error('[repair][fix][error]', e?.message || e);
   }
+}
+
+function scheduleFixTimer({ incidentId, category, simRunId, reason, policy, version, delayMs }) {
+  const k = String(incidentId);
+  if (SCHED.timersByIncident.has(k)) return false;
+
+  const dueAt = new Date(Date.now() + delayMs);
+  const t = setTimeout(async () => {
+    try { await insertFixAfterDelay({ incidentId, category, simRunId, reason, policy, version }); }
+    finally { SCHED.timersByIncident.delete(k); }
+  }, delayMs);
+
+  SCHED.timersByIncident.set(k, { t, dueAt });
+  SCHED.scheduled += 1;
+  return true;
 }
 
 async function tick() {
@@ -132,13 +194,10 @@ async function tick() {
   SCHED.ticking = true;
 
   try {
-    const batchHint = SCHED.budgetPerTick * 5; // small over-fetch so policy can filter
+    const batchHint = SCHED.budgetPerTick * 5;
     const pool = await fetchRecentIncidents(SCHED.simRunId, batchHint, SCHED.recentWindowSec);
-
-    // Filter per policy (infra-first).
     const infraPool = pool.filter((d) => chooseCategoryFrom(d.serviceIssue) === 'infrastructure');
 
-    // Deterministic selection up to budget
     const picker = deterministicPicker(SCHED.rngFn, infraPool);
     let emitted = 0;
 
@@ -148,7 +207,6 @@ async function tick() {
       const category = 'infrastructure';
       const deterministicKey = `${SCHED.simRunId}:${category}:${d._id.toString()}:${SCHED.version}`;
 
-      // Construct the log payload once so we can both log and persist
       const log = {
         simRunId: SCHED.simRunId,
         ts: nowIso(),
@@ -161,28 +219,40 @@ async function tick() {
         deterministicKey,
       };
 
-      // Emit JSON line to stdout
-      // eslint-disable-next-line no-console
       console.log('[repair]', JSON.stringify(log));
+      SCHED.candidatesEmitted += 1;
+      emitted += 1;
 
-      // Optional DB persistence (Phase 3)
-      if (SCHED.persist) {
-        try {
-          await persistFixCandidate(log);
-        } catch (e) {
-          // eslint-disable-next-line no-console
-          console.error('[repair][persist][error]', e?.message || e);
-        }
+      if (SCHED.rngFn() > SCHED.pFixProbability) { SCHED.droppedByProbability += 1; continue; }
+
+      let baseSec = sampleLogNormalSeconds(SCHED.rngFn, {
+        medianSec: SCHED.delayMedianSec,
+        p95Sec: SCHED.delayP95Sec,
+      });
+      const jitter = Math.floor((SCHED.rngFn() * 2 - 1) * SCHED.delayJitterSec);
+      let delaySec = Math.max(1, baseSec + jitter);
+
+      if (delaySec > SCHED.maxDelaySec) {
+        console.warn('[repair] delaySec clamped', { baseSec, jitter, delaySec, max: SCHED.maxDelaySec });
+        delaySec = SCHED.maxDelaySec;
       }
 
-      emitted += 1;
+      const delayMs = Math.min(delaySec * 1000, 2147483647); // guard int32 ms
+
+      scheduleFixTimer({
+        incidentId: d._id,
+        category,
+        simRunId: SCHED.simRunId,
+        reason: log.reason,
+        policy: log.policy,
+        version: log.version,
+        delayMs,
+      });
     }
 
-    SCHED.candidatesEmitted += emitted;
     SCHED.ticks += 1;
     SCHED.lastTickAt = new Date();
   } catch (err) {
-    // eslint-disable-next-line no-console
     console.warn('[repairScheduler] tick error (continuing):', err?.message || err);
   } finally {
     SCHED.ticking = false;
@@ -199,80 +269,75 @@ function stopLoop() {
     clearInterval(SCHED.timer);
     SCHED.timer = null;
   }
+  for (const { t } of SCHED.timersByIncident.values()) clearTimeout(t);
+  SCHED.timersByIncident.clear();
 }
 
 export const repairScheduler = {
-  /**
-   * Start the repair scheduler (Phase 3-capable).
-   * @param {object} simRunContext - e.g. { simRunId, params: { seed, ... } }
-   * @param {object} cfg - optional overrides:
-   *   { cadenceMs, budgetPerTick, policy, version, recentWindowSec, persist }
-   */
   start(simRunContext, cfg = {}) {
-    // Idempotent start
-    if (SCHED.state === 'running' && SCHED.simRunId === simRunContext?.simRunId) {
-      return this.status();
-    }
+    if (SCHED.state === 'running' && SCHED.simRunId === simRunContext?.simRunId) return this.status();
 
     const simRunId = simRunContext?.simRunId;
     const seed = simRunContext?.params?.seed ?? null;
-    if (!simRunId) {
-      throw Object.assign(new Error('repairScheduler.start: missing simRunId'), { status: 400 });
-    }
+    if (!simRunId) throw Object.assign(new Error('repairScheduler.start: missing simRunId'), { status: 400 });
 
-    // Merge config
-    SCHED.cadenceMs = Number(cfg.cadenceMs ?? DEFAULTS.cadenceMs);
-    SCHED.budgetPerTick = Number(cfg.budgetPerTick ?? DEFAULTS.budgetPerTick);
-    SCHED.policy = String(cfg.policy ?? DEFAULTS.policy);
-    SCHED.version = String(cfg.version ?? DEFAULTS.version);
-    SCHED.recentWindowSec = Number(cfg.recentWindowSec ?? DEFAULTS.recentWindowSec);
-    SCHED.persist = typeof cfg.persist === 'boolean' ? cfg.persist : DEFAULTS.persist;
+    // Merge overrides with config-driven defaults
+    SCHED.cadenceMs        = pickNum(cfg.cadenceMs,       DEFAULTS.cadenceMs);
+    SCHED.budgetPerTick    = pickNum(cfg.budgetPerTick,   DEFAULTS.budgetPerTick);
+    SCHED.recentWindowSec  = pickNum(cfg.recentWindowSec, DEFAULTS.recentWindowSec);
 
-    // Deterministic RNG (derive even when seed is null by using a fixed fallback)
+    SCHED.delayMedianSec   = pickNum(cfg.delayMedianSec,  DEFAULTS.delayMedianSec);
+    SCHED.delayP95Sec      = pickNum(cfg.delayP95Sec,     DEFAULTS.delayP95Sec);
+    SCHED.delayJitterSec   = pickNum(cfg.delayJitterSec,  DEFAULTS.delayJitterSec);
+    SCHED.pFixProbability  = pickNum(cfg.pFixProbability, DEFAULTS.pFixProbability);
+    SCHED.maxDelaySec      = pickNum(cfg.maxDelaySec,     DEFAULTS.maxDelaySec);
+
+    SCHED.policy           = pickStr(cfg.policy,          DEFAULTS.policy);
+    SCHED.version          = pickStr(cfg.version,         DEFAULTS.version);
+
     const finalSeed = Number.isFinite(+seed) ? +seed : 0xC0FFEE;
     const { rand } = makeRNG(finalSeed);
 
-    // Reset state
     SCHED.state = 'running';
     SCHED.simRunId = simRunId;
     SCHED.rngFn = rand;
     SCHED.ticks = 0;
     SCHED.candidatesEmitted = 0;
+    SCHED.scheduled = 0;
     SCHED.persisted = 0;
     SCHED.duplicatesIgnored = 0;
+    SCHED.droppedByProbability = 0;
     SCHED.lastTickAt = null;
 
+    stopLoop();
     startLoop();
     return this.status();
   },
 
-  /**
-   * Optional runtime configuration update (e.g., flip persistence on/off mid-run).
-   * @param {object} cfg - { persist?: boolean, cadenceMs?, budgetPerTick?, recentWindowSec? }
-   */
   configure(cfg = {}) {
-    if (typeof cfg.persist === 'boolean') SCHED.persist = cfg.persist;
     if (cfg.cadenceMs != null) {
       SCHED.cadenceMs = Number(cfg.cadenceMs);
-      // restart loop with new cadence
-      if (SCHED.state === 'running') {
-        stopLoop();
-        startLoop();
-      }
+      if (SCHED.state === 'running') { stopLoop(); startLoop(); }
     }
-    if (cfg.budgetPerTick != null) SCHED.budgetPerTick = Number(cfg.budgetPerTick);
-    if (cfg.recentWindowSec != null) SCHED.recentWindowSec = Number(cfg.recentWindowSec);
+    if (cfg.budgetPerTick     != null) SCHED.budgetPerTick    = Number(cfg.budgetPerTick);
+    if (cfg.recentWindowSec   != null) SCHED.recentWindowSec  = Number(cfg.recentWindowSec);
+
+    if (cfg.delayMedianSec    != null) SCHED.delayMedianSec   = Number(cfg.delayMedianSec);
+    if (cfg.delayP95Sec       != null) SCHED.delayP95Sec      = Number(cfg.delayP95Sec);
+    if (cfg.delayJitterSec    != null) SCHED.delayJitterSec   = Number(cfg.delayJitterSec);
+    if (cfg.pFixProbability   != null) SCHED.pFixProbability  = Number(cfg.pFixProbability);
+    if (cfg.maxDelaySec       != null) SCHED.maxDelaySec      = Number(cfg.maxDelaySec);
+
+    if (cfg.policy            != null) SCHED.policy           = String(cfg.policy);
+    if (cfg.version           != null) SCHED.version          = String(cfg.version);
+
     return this.status();
   },
 
-  /**
-   * Stop the scheduler (idempotent). Waits for an in-flight tick to finish.
-   */
   async stop() {
     if (SCHED.state === 'idle') return this.status();
     SCHED.state = 'stopping';
 
-    // Wait briefly if a tick is in progress
     const GUARD_MS = 1000;
     const start = Date.now();
     while (SCHED.ticking && Date.now() - start < GUARD_MS) {
@@ -281,17 +346,13 @@ export const repairScheduler = {
 
     stopLoop();
 
-    // Reset lightweight state; keep last metrics for status
     SCHED.state = 'idle';
     SCHED.simRunId = null;
-    SCHED.rng = null;
+    SCHED.rngFn = null;
 
     return this.status();
   },
 
-  /**
-   * Current scheduler status snapshot.
-   */
   status() {
     return {
       state: SCHED.state,
@@ -301,12 +362,28 @@ export const repairScheduler = {
       policy: SCHED.policy,
       version: SCHED.version,
       recentWindowSec: SCHED.recentWindowSec,
-      persist: SCHED.persist,                 // NEW
+
+      delayMedianSec: SCHED.delayMedianSec,
+      delayP95Sec: SCHED.delayP95Sec,
+      delayJitterSec: SCHED.delayJitterSec,
+      pFixProbability: SCHED.pFixProbability,
+      maxDelaySec: SCHED.maxDelaySec,
+
       ticks: SCHED.ticks,
       candidatesEmitted: SCHED.candidatesEmitted,
-      persisted: SCHED.persisted,             // NEW
-      duplicatesIgnored: SCHED.duplicatesIgnored, // NEW
+      scheduled: SCHED.scheduled,
+      persisted: SCHED.persisted,
+      duplicatesIgnored: SCHED.duplicatesIgnored,
+      droppedByProbability: SCHED.droppedByProbability,
+      activeTimers: SCHED.timersByIncident.size,
       lastTickAt: SCHED.lastTickAt,
     };
   },
 };
+
+function pickNum(override, deflt) {
+  return (override != null && Number.isFinite(Number(override))) ? Number(override) : deflt;
+}
+function pickStr(override, deflt) {
+  return (typeof override === 'string' && override.length) ? override : deflt;
+}

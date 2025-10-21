@@ -65,8 +65,7 @@ export default function App() {
 
   // Controls
   const [note, setNote] = useState(""); // Sim Run Note (optional)
-  const [repairsEnabled, setRepairsEnabled] = useState(false); // enable scheduler
-  const [persistRepairs, setPersistRepairs] = useState(true);  // Phase 3: write to fix_events
+  const [repairsEnabled, setRepairsEnabled] = useState(false); // single toggle (always persists)
 
   // Status / UI
   const [running, setRunning] = useState(false);
@@ -83,19 +82,17 @@ export default function App() {
     try {
       const resp = await getStatus();
       const { simulator, scheduler, persistedDb } = normalizeStatusResponse(resp);
-      setRunning(!!simulator.running);
+      const isRunning = !!simulator.running;
+      setRunning(isRunning);
       if (typeof simulator.concurrency === "number") setConcurrency(simulator.concurrency);
 
-      // Prefer repairsEnabled from run.params if present
-      const serverRepairs =
-        (simulator?.runParams && typeof simulator.runParams.repairsEnabled === "boolean")
-          ? simulator.runParams.repairsEnabled
-          : (typeof simulator.repairsEnabled === "boolean" ? simulator.repairsEnabled : undefined);
-      if (typeof serverRepairs === "boolean") setRepairsEnabled(serverRepairs);
-
-      // Only sync persist flag while the scheduler is running; otherwise keep user's choice
-      if (scheduler?.state === "running" && typeof scheduler?.persist === "boolean") {
-        setPersistRepairs(scheduler.persist);
+      // ✅ Only sync repairsEnabled from server while a run is active.
+      if (isRunning) {
+        const serverRepairs =
+          (simulator?.runParams && typeof simulator.runParams.repairsEnabled === "boolean")
+            ? simulator.runParams.repairsEnabled
+            : (typeof simulator.repairsEnabled === "boolean" ? simulator.repairsEnabled : undefined);
+        if (typeof serverRepairs === "boolean") setRepairsEnabled(serverRepairs);
       }
 
       setStatus({ ...simulator, scheduler, persistedDb });
@@ -111,28 +108,16 @@ export default function App() {
       spread: Number(spread),
       seed: seed === "" ? null : Number(seed),
       concurrency: Math.max(1, Number(concurrency)),
-
-      // carried
       note: note?.trim() === "" ? null : note.trim(),
-
-      // Phase 2+3 flags
-      repairsEnabled: !!repairsEnabled,
-      // Phase 3: pass persist toggle through to scheduler
-      repairConfig: { persist: !!persistRepairs },
+      repairsEnabled: !!repairsEnabled // single flag; scheduler always persists when enabled
     };
 
     try {
       const resp = await startSim(payload);
       const { simulator, scheduler, persistedDb } = normalizeStatusResponse(resp);
-
       setRunning(!!simulator.running);
       setStatus({ ...simulator, scheduler, persistedDb });
-
-      // Reflect actual server persist flag if present; otherwise keep what we requested
-      const serverPersist =
-        typeof scheduler?.persist === "boolean" ? scheduler.persist : undefined;
-      setPersistRepairs(serverPersist !== undefined ? serverPersist : !!payload.repairConfig?.persist);
-
+      // After start, server owns truth; refresh will now sync checkbox from server
       show("Simulator started", "success");
     } catch {
       show("Failed to start simulator", "error");
@@ -167,7 +152,6 @@ export default function App() {
 
   // Scheduler pills
   const schedulerState = status?.scheduler?.state ?? "idle";
-  const persistOn = !!status?.scheduler?.persist;
 
   const schedulerPill = (
     <span
@@ -175,15 +159,6 @@ export default function App() {
       title="Phase-3 repair scheduler"
     >
       Repairs: <b className="mono">{schedulerState}</b>
-    </span>
-  );
-
-  const persistPill = (
-    <span
-      className={`pill ${persistOn ? "pill--ok" : "pill--status"}`}
-      title="Persist to incidents.fix_events"
-    >
-      Persist: <b className="mono">{String(persistOn)}</b>
     </span>
   );
 
@@ -281,7 +256,7 @@ export default function App() {
 
         <Divider />
 
-        {/* --- Repair toggles --- */}
+        {/* --- Repair toggle (single) --- */}
         <div className="row" style={{ alignItems: "center", gap: 16 }}>
           <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <input
@@ -289,20 +264,7 @@ export default function App() {
               checked={repairsEnabled}
               onChange={(e) => setRepairsEnabled(e.target.checked)}
             />
-            Enable Repair
-          </label>
-
-          <label
-            style={{ display: "flex", gap: 8, alignItems: "center", opacity: repairsEnabled ? 1 : 0.6 }}
-            title="When ON, writes WOULD_FIX candidates to incidents.fix_events"
-          >
-            <input
-              type="checkbox"
-              checked={persistRepairs}
-              disabled={!repairsEnabled}
-              onChange={(e) => setPersistRepairs(e.target.checked)}
-            />
-            Persist repairs
+            Enable Repair <span style={{ opacity: 0.7 }}>(always persists)</span>
           </label>
         </div>
 
@@ -332,7 +294,6 @@ export default function App() {
             {running ? "Running" : "Stopped"}
           </span>
           {schedulerPill}
-          {persistPill}
 
           {/* IPS per worker */}
           <span className="pill pill--info" title="Incidents/sec divided among workers">
@@ -381,14 +342,12 @@ export default function App() {
     spread: Number(spread),
     seed: seed?.trim() === "" ? null : seed.trim(),
     concurrency: Number(concurrency),
-    // expose current UI choices locally when not connected
     repairsEnabled: !!repairsEnabled,
-    persistRepairs: !!persistRepairs,
     note: note?.trim() === "" ? null : note.trim(),
     cityModelSize: 0,
     insertsPerSecMA: 0,
     insertsPerSecWindow: 10,
-    scheduler: { state: "idle", persist: !!persistRepairs, persisted: 0, duplicatesIgnored: 0 },
+    scheduler: { state: "idle", persisted: 0, duplicatesIgnored: 0 },
   },
   null,
   2
