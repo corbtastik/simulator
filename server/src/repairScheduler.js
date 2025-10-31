@@ -300,6 +300,7 @@ export const repairScheduler = {
 
     SCHED.state = 'running';
     SCHED.simRunId = simRunId;
+    console.log('[after we set SCHED.simRunId = simRunId]', { simRunId: SCHED.simRunId, seed });
     SCHED.rngFn = rand;
     SCHED.ticks = 0;
     SCHED.candidatesEmitted = 0;

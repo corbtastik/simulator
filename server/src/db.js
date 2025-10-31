@@ -19,12 +19,17 @@ export async function connectDB() {
   db = client.db(CONFIG.DB_NAME);
   coll = db.collection(CONFIG.COLL_NAME); // typically "incident_events"
 
-  // Helpful indexes for your inserts + queries
+  // Helpful indexes for your inserts + queries (ingest collection)
   await coll.createIndex({ ts: 1 }).catch(() => {});
   await coll
     .createIndex({ 'loc.coordinates': '2dsphere' }, { name: 'geo2dsphere', sparse: true })
     .catch(() => {});
   await coll.createIndex({ city: 1, ts: -1 }).catch(() => {});
+
+  // Ensure uniqueness for ASP $merge of infrastructure resolutions:
+  // $merge.on: ["incidentId","type"] with whenMatched: "keepExisting"
+  // We scope uniqueness to { type: "resolution" } to avoid colliding with incident docs.
+  await ensureInfraResolutionIndex(db);
 
   return { client, db, coll };
 }
@@ -145,6 +150,42 @@ export async function countFixEvents(passedDb, { simRunId } = {}) {
   const fixColl = _db.collection(CONFIG.FIX_COLL_NAME);
   const filter = simRunId ? { simRunId } : {};
   return fixColl.countDocuments(filter);
+}
+
+/* ------------------------------------------------------------------
+ * Phase 4: infrastructure_events resolution uniqueness for ASP $merge
+ * ------------------------------------------------------------------*/
+
+/**
+ * Ensure unique index to support ASP $merge into incidents.infrastructure_events
+ * using:
+ *   on: ["incidentId", "type"]
+ *   whenMatched: "keepExisting"
+ *   whenNotMatched: "insert"
+ *
+ * We scope uniqueness to { type: "resolution" } so incident docs don't conflict.
+ */
+export async function ensureInfraResolutionIndex(passedDb) {
+  const _db = passedDb || getDb();
+  const infraColl = _db.collection('infrastructure_events');
+  try {
+    await infraColl.createIndex(
+      { incidentId: 1, type: 1 },
+      {
+        name: 'uniq_incidentId_type_resolution',
+        unique: true,
+        partialFilterExpression: { type: 'resolution' },
+        background: true
+      }
+    );
+  } catch (err) {
+    // IndexOptionsConflict (code 85) if an index exists with different options.
+    if (err?.codeName === 'IndexOptionsConflict' || err?.code === 85) {
+      console.warn('[indexes] infra resolution index exists with different options:', err.message);
+    } else {
+      console.error('[indexes] failed ensuring infra resolution index:', err);
+    }
+  }
 }
 
 export async function closeDB() {

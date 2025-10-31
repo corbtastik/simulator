@@ -66,6 +66,7 @@ export async function startSimulator(input) {
   const { db, coll } = await connectDB();
 
   const simRunId = buildSimRunId(p.seed);
+  console.log('[after buildSimRunId]', { simRunId, seed: p.seed, repairsEnabled: p.repairsEnabled });
   const runId = simRunId;
 
   await insertSimRun(db, {
@@ -99,6 +100,7 @@ export async function startSimulator(input) {
   // Start the repair scheduler if enabled (it always persists internally)
   try {
     if (p.repairsEnabled) {
+      console.log('[before repairScheduler.start(...)]', { simRunId, seed: p.seed, repairsEnabled: p.repairsEnabled });
       repairScheduler.start({ simRunId, params: { seed: p.seed } }, {
         // For dev speed, you can override delays here (commented by default)
         // delayMedianSec: 60,
