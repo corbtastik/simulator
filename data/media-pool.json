@@ -1,0 +1,861 @@
+[
+  {
+    "poolId": "pedestal-open-01",
+    "kind": "image",
+    "key": "images/pedestal-open-01.jpg",
+    "mimeType": "image/jpeg",
+    "applicableTypes": [
+      "fiber",
+      "broadband"
+    ],
+    "tags": [
+      "pedestal",
+      "cable",
+      "damage"
+    ],
+    "uri": "s3://incident-intelligence-media/images/pedestal-open-01.jpg"
+  },
+  {
+    "poolId": "pedestal-open-02",
+    "kind": "image",
+    "key": "images/pedestal-open-02.jpg",
+    "mimeType": "image/jpeg",
+    "applicableTypes": [
+      "fiber",
+      "broadband"
+    ],
+    "tags": [
+      "pedestal",
+      "splice"
+    ],
+    "uri": "s3://incident-intelligence-media/images/pedestal-open-02.jpg"
+  },
+  {
+    "poolId": "fiber-splice-01",
+    "kind": "image",
+    "key": "images/fiber-splice-01.jpg",
+    "mimeType": "image/jpeg",
+    "applicableTypes": [
+      "fiber"
+    ],
+    "tags": [
+      "splice",
+      "technician",
+      "closure"
+    ],
+    "uri": "s3://incident-intelligence-media/images/fiber-splice-01.jpg"
+  },
+  {
+    "poolId": "fiber-splice-02",
+    "kind": "image",
+    "key": "images/fiber-splice-02.jpg",
+    "mimeType": "image/jpeg",
+    "applicableTypes": [
+      "fiber"
+    ],
+    "tags": [
+      "splice",
+      "fusion",
+      "tray"
+    ],
+    "uri": "s3://incident-intelligence-media/images/fiber-splice-02.jpg"
+  },
+  {
+    "poolId": "cable-damage-01",
+    "kind": "image",
+    "key": "images/cable-damage-01.jpg",
+    "mimeType": "image/jpeg",
+    "applicableTypes": [
+      "fiber",
+      "construction"
+    ],
+    "tags": [
+      "severed",
+      "conduit"
+    ],
+    "uri": "s3://incident-intelligence-media/images/cable-damage-01.jpg"
+  },
+  {
+    "poolId": "trench-open-01",
+    "kind": "image",
+    "key": "images/trench-open-01.jpg",
+    "mimeType": "image/jpeg",
+    "applicableTypes": [
+      "construction",
+      "fiber"
+    ],
+    "tags": [
+      "trench",
+      "excavation"
+    ],
+    "uri": "s3://incident-intelligence-media/images/trench-open-01.jpg"
+  },
+  {
+    "poolId": "bore-rig-01",
+    "kind": "image",
+    "key": "images/bore-rig-01.jpg",
+    "mimeType": "image/jpeg",
+    "applicableTypes": [
+      "construction"
+    ],
+    "tags": [
+      "directional-bore",
+      "rig"
+    ],
+    "uri": "s3://incident-intelligence-media/images/bore-rig-01.jpg"
+  },
+  {
+    "poolId": "excavator-01",
+    "kind": "image",
+    "key": "images/excavator-01.jpg",
+    "mimeType": "image/jpeg",
+    "applicableTypes": [
+      "construction",
+      "fiber"
+    ],
+    "tags": [
+      "excavator",
+      "dig"
+    ],
+    "uri": "s3://incident-intelligence-media/images/excavator-01.jpg"
+  },
+  {
+    "poolId": "utility-markings-01",
+    "kind": "image",
+    "key": "images/utility-markings-01.jpg",
+    "mimeType": "image/jpeg",
+    "applicableTypes": [
+      "construction"
+    ],
+    "tags": [
+      "locate",
+      "paint",
+      "row"
+    ],
+    "uri": "s3://incident-intelligence-media/images/utility-markings-01.jpg"
+  },
+  {
+    "poolId": "tower-01",
+    "kind": "image",
+    "key": "images/tower-01.jpg",
+    "mimeType": "image/jpeg",
+    "applicableTypes": [
+      "5g",
+      "smartcell",
+      "backhaul"
+    ],
+    "tags": [
+      "tower",
+      "antenna"
+    ],
+    "uri": "s3://incident-intelligence-media/images/tower-01.jpg"
+  },
+  {
+    "poolId": "tower-02",
+    "kind": "image",
+    "key": "images/tower-02.jpg",
+    "mimeType": "image/jpeg",
+    "applicableTypes": [
+      "5g",
+      "backhaul"
+    ],
+    "tags": [
+      "tower",
+      "microwave",
+      "dish"
+    ],
+    "uri": "s3://incident-intelligence-media/images/tower-02.jpg"
+  },
+  {
+    "poolId": "tower-climb-01",
+    "kind": "image",
+    "key": "images/tower-climb-01.jpg",
+    "mimeType": "image/jpeg",
+    "applicableTypes": [
+      "5g",
+      "smartcell"
+    ],
+    "tags": [
+      "technician",
+      "tower",
+      "maintenance"
+    ],
+    "uri": "s3://incident-intelligence-media/images/tower-climb-01.jpg"
+  },
+  {
+    "poolId": "smallcell-pole-01",
+    "kind": "image",
+    "key": "images/smallcell-pole-01.jpg",
+    "mimeType": "image/jpeg",
+    "applicableTypes": [
+      "smartcell",
+      "smart-city"
+    ],
+    "tags": [
+      "pole",
+      "small-cell"
+    ],
+    "uri": "s3://incident-intelligence-media/images/smallcell-pole-01.jpg"
+  },
+  {
+    "poolId": "microwave-dish-01",
+    "kind": "image",
+    "key": "images/microwave-dish-01.jpg",
+    "mimeType": "image/jpeg",
+    "applicableTypes": [
+      "backhaul"
+    ],
+    "tags": [
+      "microwave",
+      "dish",
+      "radome"
+    ],
+    "uri": "s3://incident-intelligence-media/images/microwave-dish-01.jpg"
+  },
+  {
+    "poolId": "datacenter-hall-01",
+    "kind": "image",
+    "key": "images/datacenter-hall-01.jpg",
+    "mimeType": "image/jpeg",
+    "applicableTypes": [
+      "datacenter",
+      "edge"
+    ],
+    "tags": [
+      "racks",
+      "hall",
+      "cold-aisle"
+    ],
+    "uri": "s3://incident-intelligence-media/images/datacenter-hall-01.jpg"
+  },
+  {
+    "poolId": "datacenter-hall-02",
+    "kind": "image",
+    "key": "images/datacenter-hall-02.jpg",
+    "mimeType": "image/jpeg",
+    "applicableTypes": [
+      "datacenter"
+    ],
+    "tags": [
+      "racks",
+      "hot-aisle"
+    ],
+    "uri": "s3://incident-intelligence-media/images/datacenter-hall-02.jpg"
+  },
+  {
+    "poolId": "crah-unit-01",
+    "kind": "image",
+    "key": "images/crah-unit-01.jpg",
+    "mimeType": "image/jpeg",
+    "applicableTypes": [
+      "datacenter"
+    ],
+    "tags": [
+      "crah",
+      "cooling",
+      "hvac"
+    ],
+    "uri": "s3://incident-intelligence-media/images/crah-unit-01.jpg"
+  },
+  {
+    "poolId": "thermal-hotaisle-01",
+    "kind": "image",
+    "key": "images/thermal-hotaisle-01.jpg",
+    "mimeType": "image/jpeg",
+    "applicableTypes": [
+      "datacenter"
+    ],
+    "tags": [
+      "thermal",
+      "heat",
+      "infrared"
+    ],
+    "uri": "s3://incident-intelligence-media/images/thermal-hotaisle-01.jpg"
+  },
+  {
+    "poolId": "generator-01",
+    "kind": "image",
+    "key": "images/generator-01.jpg",
+    "mimeType": "image/jpeg",
+    "applicableTypes": [
+      "datacenter",
+      "smartcell"
+    ],
+    "tags": [
+      "generator",
+      "diesel",
+      "backup"
+    ],
+    "uri": "s3://incident-intelligence-media/images/generator-01.jpg"
+  },
+  {
+    "poolId": "noc-console-01",
+    "kind": "image",
+    "key": "images/noc-console-01.jpg",
+    "mimeType": "image/jpeg",
+    "applicableTypes": [
+      "public-safety",
+      "priority-access",
+      "government"
+    ],
+    "tags": [
+      "console",
+      "dispatch",
+      "operations"
+    ],
+    "uri": "s3://incident-intelligence-media/images/noc-console-01.jpg"
+  },
+  {
+    "poolId": "ont-panel-01",
+    "kind": "image",
+    "key": "images/ont-panel-01.jpg",
+    "mimeType": "image/jpeg",
+    "applicableTypes": [
+      "broadband",
+      "fiber"
+    ],
+    "tags": [
+      "ont",
+      "modem",
+      "subscriber"
+    ],
+    "uri": "s3://incident-intelligence-media/images/ont-panel-01.jpg"
+  },
+  {
+    "poolId": "edge-cabinet-01",
+    "kind": "image",
+    "key": "images/edge-cabinet-01.jpg",
+    "mimeType": "image/jpeg",
+    "applicableTypes": [
+      "edge",
+      "cloud-network"
+    ],
+    "tags": [
+      "cabinet",
+      "compute"
+    ],
+    "uri": "s3://incident-intelligence-media/images/edge-cabinet-01.jpg"
+  },
+  {
+    "poolId": "street-camera-01",
+    "kind": "image",
+    "key": "images/street-camera-01.jpg",
+    "mimeType": "image/jpeg",
+    "applicableTypes": [
+      "smart-city"
+    ],
+    "tags": [
+      "camera",
+      "pole",
+      "municipal"
+    ],
+    "uri": "s3://incident-intelligence-media/images/street-camera-01.jpg"
+  },
+  {
+    "poolId": "iot-sensor-01",
+    "kind": "image",
+    "key": "images/iot-sensor-01.jpg",
+    "mimeType": "image/jpeg",
+    "applicableTypes": [
+      "iot"
+    ],
+    "tags": [
+      "sensor",
+      "endpoint",
+      "field"
+    ],
+    "uri": "s3://incident-intelligence-media/images/iot-sensor-01.jpg"
+  },
+  {
+    "poolId": "satellite-dish-01",
+    "kind": "image",
+    "key": "images/satellite-dish-01.jpg",
+    "mimeType": "image/jpeg",
+    "applicableTypes": [
+      "satellite"
+    ],
+    "tags": [
+      "vsat",
+      "dish",
+      "sky"
+    ],
+    "uri": "s3://incident-intelligence-media/images/satellite-dish-01.jpg"
+  },
+  {
+    "poolId": "wifi-ap-01",
+    "kind": "image",
+    "key": "images/wifi-ap-01.jpg",
+    "mimeType": "image/jpeg",
+    "applicableTypes": [
+      "wifi-hotspot"
+    ],
+    "tags": [
+      "access-point",
+      "venue"
+    ],
+    "uri": "s3://incident-intelligence-media/images/wifi-ap-01.jpg"
+  },
+  {
+    "poolId": "splice-map",
+    "kind": "document-page",
+    "key": "docs/splice-map-p14.png",
+    "mimeType": "image/png",
+    "applicableTypes": [
+      "fiber",
+      "construction"
+    ],
+    "tags": [
+      "as-built",
+      "ring",
+      "enclosure"
+    ],
+    "pageNumber": 14,
+    "uri": "s3://incident-intelligence-media/docs/splice-map-p14.png"
+  },
+  {
+    "poolId": "splice-map",
+    "kind": "document-page",
+    "key": "docs/splice-map-p15.png",
+    "mimeType": "image/png",
+    "applicableTypes": [
+      "fiber"
+    ],
+    "tags": [
+      "as-built",
+      "ring"
+    ],
+    "pageNumber": 15,
+    "uri": "s3://incident-intelligence-media/docs/splice-map-p15.png"
+  },
+  {
+    "poolId": "otdr-trace",
+    "kind": "document-page",
+    "key": "docs/otdr-trace-p1.png",
+    "mimeType": "image/png",
+    "applicableTypes": [
+      "fiber"
+    ],
+    "tags": [
+      "otdr",
+      "trace",
+      "event"
+    ],
+    "pageNumber": 1,
+    "uri": "s3://incident-intelligence-media/docs/otdr-trace-p1.png"
+  },
+  {
+    "poolId": "route-drawing",
+    "kind": "document-page",
+    "key": "docs/route-drawing-p1.png",
+    "mimeType": "image/png",
+    "applicableTypes": [
+      "construction",
+      "fiber"
+    ],
+    "tags": [
+      "route",
+      "plan"
+    ],
+    "pageNumber": 1,
+    "uri": "s3://incident-intelligence-media/docs/route-drawing-p1.png"
+  },
+  {
+    "poolId": "permit-application",
+    "kind": "document-page",
+    "key": "docs/permit-application-p1.png",
+    "mimeType": "image/png",
+    "applicableTypes": [
+      "construction"
+    ],
+    "tags": [
+      "permit",
+      "row",
+      "form"
+    ],
+    "pageNumber": 1,
+    "uri": "s3://incident-intelligence-media/docs/permit-application-p1.png"
+  },
+  {
+    "poolId": "locate-ticket",
+    "kind": "document-page",
+    "key": "docs/locate-ticket-p1.png",
+    "mimeType": "image/png",
+    "applicableTypes": [
+      "construction"
+    ],
+    "tags": [
+      "locate",
+      "811",
+      "ticket"
+    ],
+    "pageNumber": 1,
+    "uri": "s3://incident-intelligence-media/docs/locate-ticket-p1.png"
+  },
+  {
+    "poolId": "circuit-asbuilt",
+    "kind": "document-page",
+    "key": "docs/circuit-asbuilt-p1.png",
+    "mimeType": "image/png",
+    "applicableTypes": [
+      "enterprise",
+      "b2b"
+    ],
+    "tags": [
+      "circuit",
+      "handoff"
+    ],
+    "pageNumber": 1,
+    "uri": "s3://incident-intelligence-media/docs/circuit-asbuilt-p1.png"
+  },
+  {
+    "poolId": "call-trace",
+    "kind": "document-page",
+    "key": "docs/call-trace-p1.png",
+    "mimeType": "image/png",
+    "applicableTypes": [
+      "voip"
+    ],
+    "tags": [
+      "ladder",
+      "sip",
+      "trace"
+    ],
+    "pageNumber": 1,
+    "uri": "s3://incident-intelligence-media/docs/call-trace-p1.png"
+  },
+  {
+    "poolId": "hall-layout",
+    "kind": "document-page",
+    "key": "docs/hall-layout-p1.png",
+    "mimeType": "image/png",
+    "applicableTypes": [
+      "datacenter"
+    ],
+    "tags": [
+      "floorplan",
+      "racks"
+    ],
+    "pageNumber": 1,
+    "uri": "s3://incident-intelligence-media/docs/hall-layout-p1.png"
+  },
+  {
+    "poolId": "peering-topology",
+    "kind": "document-page",
+    "key": "docs/peering-topology-p1.png",
+    "mimeType": "image/png",
+    "applicableTypes": [
+      "cloud-network"
+    ],
+    "tags": [
+      "bgp",
+      "peering"
+    ],
+    "pageNumber": 1,
+    "uri": "s3://incident-intelligence-media/docs/peering-topology-p1.png"
+  },
+  {
+    "poolId": "facility-topology",
+    "kind": "document-page",
+    "key": "docs/facility-topology-p1.png",
+    "mimeType": "image/png",
+    "applicableTypes": [
+      "government"
+    ],
+    "tags": [
+      "network",
+      "facility"
+    ],
+    "pageNumber": 1,
+    "uri": "s3://incident-intelligence-media/docs/facility-topology-p1.png"
+  },
+  {
+    "poolId": "coverage-attestation",
+    "kind": "document-page",
+    "key": "docs/coverage-attestation-p1.png",
+    "mimeType": "image/png",
+    "applicableTypes": [
+      "priority-access"
+    ],
+    "tags": [
+      "coverage",
+      "rf"
+    ],
+    "pageNumber": 1,
+    "uri": "s3://incident-intelligence-media/docs/coverage-attestation-p1.png"
+  },
+  {
+    "poolId": "municipal-asset-map",
+    "kind": "document-page",
+    "key": "docs/municipal-asset-map-p1.png",
+    "mimeType": "image/png",
+    "applicableTypes": [
+      "smart-city"
+    ],
+    "tags": [
+      "assets",
+      "municipal"
+    ],
+    "pageNumber": 1,
+    "uri": "s3://incident-intelligence-media/docs/municipal-asset-map-p1.png"
+  },
+  {
+    "poolId": "optical-power-readings",
+    "kind": "table",
+    "key": "tables/optical-power-readings.csv",
+    "mimeType": "text/csv",
+    "applicableTypes": [
+      "fiber"
+    ],
+    "tags": [
+      "optical",
+      "power"
+    ],
+    "uri": "s3://incident-intelligence-media/tables/optical-power-readings.csv"
+  },
+  {
+    "poolId": "errored-seconds-log",
+    "kind": "table",
+    "key": "tables/errored-seconds-log.csv",
+    "mimeType": "text/csv",
+    "applicableTypes": [
+      "backhaul"
+    ],
+    "tags": [
+      "errors",
+      "transport"
+    ],
+    "uri": "s3://incident-intelligence-media/tables/errored-seconds-log.csv"
+  },
+  {
+    "poolId": "throughput-samples",
+    "kind": "table",
+    "key": "tables/throughput-samples.csv",
+    "mimeType": "text/csv",
+    "applicableTypes": [
+      "broadband",
+      "wireless",
+      "enterprise"
+    ],
+    "tags": [
+      "throughput"
+    ],
+    "uri": "s3://incident-intelligence-media/tables/throughput-samples.csv"
+  },
+  {
+    "poolId": "temperature-readings",
+    "kind": "table",
+    "key": "tables/temperature-readings.csv",
+    "mimeType": "text/csv",
+    "applicableTypes": [
+      "datacenter"
+    ],
+    "tags": [
+      "thermal",
+      "rack"
+    ],
+    "uri": "s3://incident-intelligence-media/tables/temperature-readings.csv"
+  },
+  {
+    "poolId": "bgp-flap-log",
+    "kind": "table",
+    "key": "tables/bgp-flap-log.csv",
+    "mimeType": "text/csv",
+    "applicableTypes": [
+      "cloud-network"
+    ],
+    "tags": [
+      "bgp",
+      "flap"
+    ],
+    "uri": "s3://incident-intelligence-media/tables/bgp-flap-log.csv"
+  },
+  {
+    "poolId": "auth-failure-log",
+    "kind": "table",
+    "key": "tables/auth-failure-log.csv",
+    "mimeType": "text/csv",
+    "applicableTypes": [
+      "wifi-hotspot"
+    ],
+    "tags": [
+      "radius",
+      "auth"
+    ],
+    "uri": "s3://incident-intelligence-media/tables/auth-failure-log.csv"
+  },
+  {
+    "poolId": "mos-samples",
+    "kind": "table",
+    "key": "tables/mos-samples.csv",
+    "mimeType": "text/csv",
+    "applicableTypes": [
+      "voip"
+    ],
+    "tags": [
+      "mos",
+      "voice"
+    ],
+    "uri": "s3://incident-intelligence-media/tables/mos-samples.csv"
+  },
+  {
+    "poolId": "uplink-history",
+    "kind": "table",
+    "key": "tables/uplink-history.csv",
+    "mimeType": "text/csv",
+    "applicableTypes": [
+      "iot"
+    ],
+    "tags": [
+      "uplink",
+      "fleet"
+    ],
+    "uri": "s3://incident-intelligence-media/tables/uplink-history.csv"
+  },
+  {
+    "poolId": "snr-samples",
+    "kind": "table",
+    "key": "tables/snr-samples.csv",
+    "mimeType": "text/csv",
+    "applicableTypes": [
+      "satellite"
+    ],
+    "tags": [
+      "snr",
+      "beam"
+    ],
+    "uri": "s3://incident-intelligence-media/tables/snr-samples.csv"
+  },
+  {
+    "poolId": "drive-test",
+    "kind": "table",
+    "key": "tables/drive-test.csv",
+    "mimeType": "text/csv",
+    "applicableTypes": [
+      "5g"
+    ],
+    "tags": [
+      "drive-test",
+      "rf"
+    ],
+    "uri": "s3://incident-intelligence-media/tables/drive-test.csv"
+  },
+  {
+    "poolId": "pod-failures",
+    "kind": "table",
+    "key": "tables/pod-failures.csv",
+    "mimeType": "text/csv",
+    "applicableTypes": [
+      "edge"
+    ],
+    "tags": [
+      "kubernetes",
+      "scheduling"
+    ],
+    "uri": "s3://incident-intelligence-media/tables/pod-failures.csv"
+  },
+  {
+    "poolId": "failover-log",
+    "kind": "table",
+    "key": "tables/failover-log.csv",
+    "mimeType": "text/csv",
+    "applicableTypes": [
+      "government"
+    ],
+    "tags": [
+      "failover",
+      "rto"
+    ],
+    "uri": "s3://incident-intelligence-media/tables/failover-log.csv"
+  },
+  {
+    "poolId": "call-failures",
+    "kind": "table",
+    "key": "tables/call-failures.csv",
+    "mimeType": "text/csv",
+    "applicableTypes": [
+      "public-safety"
+    ],
+    "tags": [
+      "cad",
+      "calls"
+    ],
+    "uri": "s3://incident-intelligence-media/tables/call-failures.csv"
+  },
+  {
+    "poolId": "packet-loss-by-site",
+    "kind": "table",
+    "key": "tables/packet-loss-by-site.csv",
+    "mimeType": "text/csv",
+    "applicableTypes": [
+      "b2b"
+    ],
+    "tags": [
+      "loss",
+      "sites"
+    ],
+    "uri": "s3://incident-intelligence-media/tables/packet-loss-by-site.csv"
+  },
+  {
+    "poolId": "drone-tower-pass",
+    "kind": "video-segment",
+    "key": "video/drone-tower-pass.mp4",
+    "mimeType": "video/mp4",
+    "applicableTypes": [
+      "5g",
+      "smartcell"
+    ],
+    "tags": [
+      "drone",
+      "tower",
+      "aerial"
+    ],
+    "video": {
+      "startSec": 84,
+      "endSec": 96,
+      "fps": 4,
+      "thumbnailKey": "video/drone-tower-pass-thumb.jpg"
+    },
+    "uri": "s3://incident-intelligence-media/video/drone-tower-pass.mp4"
+  },
+  {
+    "poolId": "drone-path-survey",
+    "kind": "video-segment",
+    "key": "video/drone-path-survey.mp4",
+    "mimeType": "video/mp4",
+    "applicableTypes": [
+      "backhaul"
+    ],
+    "tags": [
+      "drone",
+      "path",
+      "aerial"
+    ],
+    "video": {
+      "startSec": 12,
+      "endSec": 26,
+      "fps": 4,
+      "thumbnailKey": "video/drone-path-survey-thumb.jpg"
+    },
+    "uri": "s3://incident-intelligence-media/video/drone-path-survey.mp4"
+  },
+  {
+    "poolId": "drone-coverage",
+    "kind": "video-segment",
+    "key": "video/drone-coverage.mp4",
+    "mimeType": "video/mp4",
+    "applicableTypes": [
+      "smartcell"
+    ],
+    "tags": [
+      "drone",
+      "coverage"
+    ],
+    "video": {
+      "startSec": 40,
+      "endSec": 55,
+      "fps": 4,
+      "thumbnailKey": "video/drone-coverage-thumb.jpg"
+    },
+    "uri": "s3://incident-intelligence-media/video/drone-coverage.mp4"
+  }
+]
