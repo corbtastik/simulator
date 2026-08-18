@@ -66,6 +66,8 @@ export default function App() {
   // Controls
   const [note, setNote] = useState(""); // Sim Run Note (optional)
   const [repairsEnabled, setRepairsEnabled] = useState(false); // single toggle (always persists)
+  const [scenariosEnabled, setScenariosEnabled] = useState(false); // inject scripted scenarios
+  const [scenarios, setScenarios] = useState(["warrior-cascade", "lexical-edge", "novel"]); // selected scenarios
 
   // Status / UI
   const [running, setRunning] = useState(false);
@@ -86,13 +88,25 @@ export default function App() {
       setRunning(isRunning);
       if (typeof simulator.concurrency === "number") setConcurrency(simulator.concurrency);
 
-      // ✅ Only sync repairsEnabled from server while a run is active.
+      // ✅ Only sync repairsEnabled and scenariosEnabled from server while a run is active.
       if (isRunning) {
         const serverRepairs =
           (simulator?.runParams && typeof simulator.runParams.repairsEnabled === "boolean")
             ? simulator.runParams.repairsEnabled
             : (typeof simulator.repairsEnabled === "boolean" ? simulator.repairsEnabled : undefined);
         if (typeof serverRepairs === "boolean") setRepairsEnabled(serverRepairs);
+
+        const serverScenarios =
+          (simulator?.runParams && typeof simulator.runParams.scenariosEnabled === "boolean")
+            ? simulator.runParams.scenariosEnabled
+            : undefined;
+        if (typeof serverScenarios === "boolean") setScenariosEnabled(serverScenarios);
+
+        const serverScenarioList =
+          (simulator?.runParams && Array.isArray(simulator.runParams.scenarios))
+            ? simulator.runParams.scenarios
+            : undefined;
+        if (serverScenarioList) setScenarios(serverScenarioList);
       }
 
       setStatus({ ...simulator, scheduler, persistedDb });
@@ -109,7 +123,9 @@ export default function App() {
       seed: seed === "" ? null : Number(seed),
       concurrency: Math.max(1, Number(concurrency)),
       note: note?.trim() === "" ? null : note.trim(),
-      repairsEnabled: !!repairsEnabled // single flag; scheduler always persists when enabled
+      repairsEnabled: !!repairsEnabled, // single flag; scheduler always persists when enabled
+      scenariosEnabled: !!scenariosEnabled,
+      scenarios: scenariosEnabled ? scenarios : [],
     };
 
     try {
@@ -266,6 +282,44 @@ export default function App() {
             />
             Enable Repair <span style={{ opacity: 0.7 }}>(always persists)</span>
           </label>
+        </div>
+
+        {/* --- Scenarios toggle --- */}
+        <div className="row" style={{ alignItems: "flex-start", gap: 16, flexDirection: "column" }}>
+          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input
+              type="checkbox"
+              checked={scenariosEnabled}
+              onChange={(e) => setScenariosEnabled(e.target.checked)}
+            />
+            Inject Scenarios <span style={{ opacity: 0.7 }}>(deterministic demo incidents)</span>
+          </label>
+
+          {scenariosEnabled && (
+            <div style={{ marginLeft: 24, display: "flex", flexDirection: "column", gap: 6 }}>
+              {[
+                { id: "warrior-cascade", label: "Warrior Cascade", desc: "6-incident systemic cluster + control" },
+                { id: "lexical-edge", label: "Lexical Edge", desc: "3 docs for hybrid search demo" },
+                { id: "novel", label: "Novel Incident", desc: "1 unprecedented failure" },
+              ].map(({ id, label, desc }) => (
+                <label key={id} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 14 }}>
+                  <input
+                    type="checkbox"
+                    checked={scenarios.includes(id)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setScenarios([...scenarios, id]);
+                      } else {
+                        setScenarios(scenarios.filter((s) => s !== id));
+                      }
+                    }}
+                  />
+                  <span>{label}</span>
+                  <span style={{ opacity: 0.6, fontSize: 12 }}>— {desc}</span>
+                </label>
+              ))}
+            </div>
+          )}
         </div>
 
         <Divider />
