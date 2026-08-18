@@ -11,7 +11,7 @@ export const CONFIG = {
   COLL_NAME: process.env.COLL_NAME ?? 'incident_events',
 
   PORT: Number(process.env.PORT ?? 5050),
-  ALLOWED_ORIGIN: process.env.ALLOWED_ORIGIN ?? 'http://localhost:5173',
+  ALLOWED_ORIGIN: process.env.ALLOWED_ORIGIN ?? 'http://localhost:5174',
 
   STATUS_WINDOW_SEC: Number(process.env.STATUS_WINDOW_SEC ?? 10),
   STATUS_POLL_MS: Number(process.env.STATUS_POLL_MS ?? 2500),
