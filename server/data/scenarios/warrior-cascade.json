@@ -1,0 +1,164 @@
+{
+  "id": "warrior-cascade",
+  "description": "Systemic cluster: directional bore strike cascading through 4 service types in 11 minutes",
+  "clusterId": "CLUSTER-2026-0812-004",
+  "baseCity": "Warrior",
+  "baseState": "AL",
+  "baseLat": 33.8143,
+  "baseLng": -86.8094,
+  "incidents": [
+    {
+      "ticketRef": "INC-2026-9101",
+      "type": "construction",
+      "tOffsetMin": 0,
+      "isSeed": true,
+      "latJitter": 0.016,
+      "lngJitter": -0.002,
+      "severity": "p1",
+      "reportedBy": "alarm",
+      "narrative": "Directional bore contacted unmarked conduit at 4ft depth on the SE-WAR ring segment. Contractor crew stopped work immediately on detecting resistance. Adjacent splice enclosure SE-WAR-1104 may be compromised. 1400 planned passings at risk.",
+      "fields": {
+        "projectCode": "FBR-WAR-311",
+        "crewCode": "CRW-4213",
+        "contractor": "Cardinal Builders",
+        "phase": "boring",
+        "permitAuthority": "Blount County ROW",
+        "blockedFootageM": 620,
+        "boreType": "directional",
+        "crewIdleDays": 0,
+        "adjacentAssets": ["SE-WAR-1104"]
+      },
+      "impact": { "unit": "passings", "count": 1400, "scope": "region" }
+    },
+    {
+      "ticketRef": "INC-2026-9104",
+      "type": "fiber",
+      "tOffsetMin": 2,
+      "isSeed": false,
+      "latJitter": -0.0005,
+      "lngJitter": 0.002,
+      "severity": "p1",
+      "reportedBy": "proactive",
+      "narrative": "Optical power collapsed on PON 1/3/4 off OLT-WAR-07. Reading -31.4dBm against -19.0 nominal. OTDR places the event at 1840m, just past the SE-WAR-1104 enclosure. 340 subscribers dark. Third-party excavation suspected based on timing.",
+      "fields": {
+        "accountId": "FBR-262",
+        "oltId": "OLT-WAR-07",
+        "ponPort": "1/3/4",
+        "opticalPowerDbm": -31.4,
+        "expectedPowerDbm": -19.0,
+        "spliceEnclosureId": "SE-WAR-1104",
+        "otdrDistanceM": 1840,
+        "suspectedCause": "third-party-dig"
+      },
+      "impact": { "unit": "subscribers", "count": 340, "scope": "region" }
+    },
+    {
+      "ticketRef": "INC-2026-9107",
+      "type": "backhaul",
+      "tOffsetMin": 4,
+      "isSeed": false,
+      "latJitter": 0.016,
+      "lngJitter": -0.027,
+      "severity": "p1",
+      "reportedBy": "alarm",
+      "narrative": "BH-WAR-118 errored seconds spiking, path unprotected. Utilization dropped to zero on the fiber leg at 03:05Z. 6 sites behind this link have lost transport. Correlates with ground work reported on the SE-WAR route.",
+      "fields": {
+        "linkCode": "BH-WAR-118",
+        "mediaType": "fiber",
+        "capacityGbps": 10,
+        "pathLengthKm": 12.4,
+        "erroredSeconds": 1840,
+        "protectionState": "unprotected",
+        "rslDbm": -74,
+        "utilizationPct": 0
+      },
+      "impact": { "unit": "sites", "count": 6, "scope": "region" }
+    },
+    {
+      "ticketRef": "INC-2026-9112",
+      "type": "smartcell",
+      "tOffsetMin": 6,
+      "isSeed": false,
+      "latJitter": 0.016,
+      "lngJitter": 0.005,
+      "severity": "p1",
+      "reportedBy": "alarm",
+      "narrative": "SC-WAR-203 stopped reporting, no heartbeat since 03:07Z. StreetMacro SM-200 on a pole mount, backhaul BH-WAR-118. 3 sectors down, roughly 480 subscribers losing offload.",
+      "fields": {
+        "nodeId": "SC-WAR-203",
+        "vendor": "StreetMacro SM-200",
+        "mountType": "pole",
+        "poleOwner": "Valley Electric",
+        "powerFeed": "metered",
+        "sectorCount": 3,
+        "backhaulLinkCode": "BH-WAR-118",
+        "coverageAreaKm2": 0.4
+      },
+      "impact": { "unit": "subscribers", "count": 480, "scope": "segment" }
+    },
+    {
+      "ticketRef": "INC-2026-9118",
+      "type": "broadband",
+      "tOffsetMin": 9,
+      "isSeed": false,
+      "latJitter": -0.012,
+      "lngJitter": 0.008,
+      "severity": "p1",
+      "reportedBy": "customer",
+      "narrative": "Subscribers on NODE-WAR-012 report the internet just quit with no lights on the ONT. 890 subs share the segment. No modem-side fault; upstream plant suspected.",
+      "fields": {
+        "accountId": "BB-515",
+        "modemModel": "RG-320",
+        "nodeId": "NODE-WAR-012",
+        "snrDb": 22.1,
+        "downstreamMbps": 0,
+        "expectedMbps": 1000,
+        "plantSegment": "SEG-12"
+      },
+      "impact": { "unit": "subscribers", "count": 890, "scope": "segment" }
+    },
+    {
+      "ticketRef": "INC-2026-9123",
+      "type": "voip",
+      "tOffsetMin": 11,
+      "isSeed": false,
+      "latJitter": 0.005,
+      "lngJitter": -0.015,
+      "severity": "p1",
+      "reportedBy": "customer",
+      "narrative": "Dead air on all inbound calls to the Warrior office. 62 extensions affected through SBC-RDG-02. MOS 1.8, PBX side reports no faults. Trunk path traverses the SE-WAR segment.",
+      "fields": {
+        "accountId": "VOIP-194",
+        "pbxVendor": "UCM-9000",
+        "codec": "G.711",
+        "mosScore": 1.8,
+        "jitterMs": 178,
+        "sbcNode": "SBC-RDG-02"
+      },
+      "impact": { "unit": "extensions", "count": 62, "scope": "single" }
+    }
+  ],
+  "control": {
+    "ticketRef": "INC-2026-9130",
+    "type": "datacenter",
+    "tOffsetMin": 7,
+    "latJitter": 0.036,
+    "lngJitter": -0.032,
+    "severity": "p2",
+    "reportedBy": "alarm",
+    "narrative": "Cooling alert in HALL-B at DC-WAR-03. 28.4C against 22.0 setpoint, delta-T 6.4. CRAH-A-03 degraded, N+1 redundancy lost. 12 racks at risk.",
+    "description": "Control case: geographically near but semantically distant, should NOT join cluster",
+    "fields": {
+      "facilityCode": "DC-WAR-03",
+      "hallId": "HALL-B",
+      "crahUnitId": "CRAH-A-03",
+      "temperatureC": 28.4,
+      "setpointC": 22.0,
+      "deltaT": 6.4,
+      "redundancyMode": "N+1",
+      "redundancyLost": true,
+      "rackRows": ["R12", "R13"]
+    },
+    "impact": { "unit": "racks", "count": 12, "scope": "single" }
+  }
+}

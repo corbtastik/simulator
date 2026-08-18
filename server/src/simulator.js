@@ -3,9 +3,11 @@ import { CONFIG, buildSimRunId } from './config.js';
 import { connectDB, insertSimRun, endSimRun } from './db.js';
 import { loadCityModel, pickCity, jitterPoint } from './cityModel.js';
 import { makeRNG } from './rng.js';
-import { makeServiceIssue } from './serviceIssues.js';
+import { makeServiceIssue, initServiceIssueRun, cleanupServiceIssueRun } from './serviceIssues.js';
+import { SEVERITY_MAP } from './typeSpecs.js';
 import { getRunState, setCurrentSimRun, clearCurrentSimRun } from './runState.js';
 import { repairScheduler } from './repairScheduler.js';
+import { injectScenarios, listScenarios } from './scenarioRunner.js';
 
 const SIM = {
   running: false,
@@ -17,6 +19,8 @@ const SIM = {
     concurrency: 1,
     note: null,
     repairsEnabled: false,   // single toggle
+    scenariosEnabled: false, // inject scripted scenarios
+    scenarios: [],           // list of scenario IDs to inject
   },
   workers: [],
   stats: {
@@ -61,6 +65,10 @@ export async function startSimulator(input) {
   const p = validateParams(input);
   p.note = typeof input?.note === 'string' ? input.note : null;
   p.repairsEnabled = !!input?.repairsEnabled;
+  p.scenariosEnabled = !!input?.scenariosEnabled;
+  p.scenarios = Array.isArray(input?.scenarios)
+    ? input.scenarios.filter(s => typeof s === 'string')
+    : (p.scenariosEnabled ? listScenarios() : []); // default: all scenarios if enabled
   SIM.params = p;
 
   const { db, coll } = await connectDB();
@@ -84,6 +92,8 @@ export async function startSimulator(input) {
     notes: p.note ?? null,
     repairsEnabled: p.repairsEnabled ?? false,
     repairPlan: { version: '2.0.0-phase2' },
+    scenariosEnabled: p.scenariosEnabled ?? false,
+    scenarios: p.scenarios ?? [],
   });
 
   setCurrentSimRun(simRunId, {
@@ -95,7 +105,22 @@ export async function startSimulator(input) {
     cityModelSize: SIM.stats.cityModelSize,
     note: p.note ?? null,
     repairsEnabled: p.repairsEnabled ?? false,
+    scenariosEnabled: p.scenariosEnabled ?? false,
+    scenarios: p.scenarios ?? [],
   });
+
+  // Initialize service issue tracking for this run
+  initServiceIssueRun(simRunId);
+
+  // Inject scenarios if enabled
+  if (p.scenariosEnabled && p.scenarios.length > 0) {
+    try {
+      const scenarioResult = await injectScenarios(coll, p.scenarios, simRunId, new Date());
+      console.log('[simulator] scenarios injected:', scenarioResult);
+    } catch (err) {
+      console.error('[simulator] scenario injection failed:', err?.message || err);
+    }
+  }
 
   // Start the repair scheduler if enabled (it always persists internally)
   try {
@@ -166,6 +191,9 @@ export async function stopSimulator() {
     const { db } = await connectDB();
     try { await endSimRun(db, simRunId); }
     catch (err) { console.error('[simulator] endSimRun failed:', err?.message || err); }
+
+    // Clean up service issue tracking for this run
+    cleanupServiceIssueRun(simRunId);
   }
 
   clearCurrentSimRun();
@@ -229,17 +257,21 @@ function runWorker({ eps, batchSize, spread, rand, gaussian, coll, simRunId }) {
           for (let i = 0; i < size; i++) {
             const c = pickCity(SIM.model, rand);
             const p = jitterPoint(c, spread, gaussian);
-            const serviceIssue = makeServiceIssue(rand, c.name);
+            const serviceIssue = makeServiceIssue(rand, c.name, { simRunId });
+
+            // Derive weight and sigmaKm from severity instead of city
+            const severityMeta = SEVERITY_MAP[serviceIssue.severity] ?? { weight: 2, sigmaKm: 5 };
 
             docs[i] = {
               type: 'incident',
               ts: new Date(),
               loc: { type: 'Point', coordinates: [p.lng, p.lat] },
               city: c.name,
+              state: c.state,
               lat: p.lat,
               lng: p.lng,
-              weight: c.weight,
-              sigmaKm: c.sigmaKm,
+              weight: severityMeta.weight,
+              sigmaKm: severityMeta.sigmaKm,
               serviceIssue,
               simRunId,
             };

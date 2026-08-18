@@ -1,0 +1,31 @@
+{
+  "id": "novel",
+  "description": "Novel incident: failure mode absent from the rest of the corpus for novelty detection",
+  "incidents": [
+    {
+      "ticketRef": "INC-2026-8903",
+      "type": "satellite",
+      "city": "Myrtle Beach",
+      "state": "SC",
+      "lat": 33.6891,
+      "lng": -78.8867,
+      "severity": "p2",
+      "reportedBy": "alarm",
+      "novelty": 0.87,
+      "narrative": "Unprecedented solar storm interference disrupting multiple LEO ground station uplinks simultaneously. Signal-to-noise ratio oscillating erratically across all beams. Automatic gain control unable to compensate. Fleet-wide impact suspected but unconfirmed. No historical precedent in runbooks.",
+      "fields": {
+        "terminalId": "SAT-7842",
+        "beamId": "BEAM-SE-18",
+        "snrDb": 2.1,
+        "expectedSnrDb": 14.0,
+        "elevationDeg": 42.5,
+        "orbitClass": "LEO",
+        "rainFadeMm": 0,
+        "solarEventId": "SOL-2026-0812-A",
+        "affectedBeams": ["BEAM-SE-18", "BEAM-SE-19", "BEAM-MW-04"],
+        "agcStatus": "saturated"
+      },
+      "impact": { "unit": "terminals", "count": 340, "scope": "region" }
+    }
+  ]
+}

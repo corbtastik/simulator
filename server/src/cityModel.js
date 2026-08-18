@@ -1,4 +1,5 @@
 import fs from 'fs';
+import { lookupState } from './stateLookup.js';
 
 export function loadCityModel(path) {
   const raw = fs.readFileSync(path, 'utf8');
@@ -6,6 +7,8 @@ export function loadCityModel(path) {
     name: c.name,
     lat: c.lat,
     lng: c.lng,
+    // Derive state from coordinates if not provided
+    state: c.state ?? lookupState(c.lat, c.lng),
     // ensure presence with sensible defaults
     weight: c.weight ?? 1,
     sigmaKm: c.sigmaKm ?? 5

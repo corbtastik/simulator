@@ -1,0 +1,74 @@
+{
+  "id": "lexical-edge",
+  "description": "Lexical-only documents: contain SE-MCA-2211 literally but describe unrelated contexts",
+  "targetEnclosure": "SE-MCA-2211",
+  "incidents": [
+    {
+      "ticketRef": "INC-2026-8860",
+      "type": "datacenter",
+      "city": "Columbus",
+      "state": "OH",
+      "lat": 39.9612,
+      "lng": -82.9988,
+      "severity": "p3",
+      "reportedBy": "proactive",
+      "narrative": "Cooling alert in HALL-A at DC-MCA-05. 26.2C against 22.0 setpoint, delta-T 4.2. CRAH-B-02 degraded, 2N redundancy lost. 8 racks at risk. Asset register lists SE-MCA-2211 as the nearest passive plant record; no physical impact.",
+      "fields": {
+        "facilityCode": "DC-MCA-05",
+        "hallId": "HALL-A",
+        "crahUnitId": "CRAH-B-02",
+        "temperatureC": 26.2,
+        "setpointC": 22.0,
+        "deltaT": 4.2,
+        "redundancyMode": "2N",
+        "redundancyLost": true,
+        "rackRows": ["R08", "R09"]
+      },
+      "impact": { "unit": "racks", "count": 8, "scope": "single" }
+    },
+    {
+      "ticketRef": "INC-2026-8863",
+      "type": "government",
+      "city": "Louisville",
+      "state": "KY",
+      "lat": 38.2527,
+      "lng": -85.7585,
+      "severity": "p2",
+      "reportedBy": "alarm",
+      "narrative": "Failover did not cut over cleanly at FAC-FFG-4821. CKT-A-6234 dropped, CKT-B-6235 took 420s against a 15min RTO. 180 users on site. Vehicle B contract. Change ticket references SE-MCA-2211 for scheduled audit only; unrelated to this fault.",
+      "fields": {
+        "department": "Federal Facilities Group",
+        "contractVehicle": "Vehicle B",
+        "facilityId": "FAC-FFG-4821",
+        "primaryPath": "CKT-A-6234",
+        "failoverPath": "CKT-B-6235",
+        "rtoMinutes": 15,
+        "actualFailoverSec": 420,
+        "classification": "unclassified"
+      },
+      "impact": { "unit": "users", "count": 180, "scope": "single" }
+    },
+    {
+      "ticketRef": "INC-2026-8866",
+      "type": "edge",
+      "city": "Chicago",
+      "state": "IL",
+      "lat": 41.8781,
+      "lng": -87.6298,
+      "severity": "p3",
+      "reportedBy": "alarm",
+      "narrative": "Registry throttling image pulls on EDGE-CHI-412 in edge-central-03/mec-workloads. 85 pull failures, 12 workloads pending. CPU 92%, mem 78%. video-analytics degraded. Inventory reconciliation flagged SE-MCA-2211 in the same billing group; informational.",
+      "fields": {
+        "nodeId": "EDGE-CHI-412",
+        "k8sCluster": "edge-central-03",
+        "namespace": "mec-workloads",
+        "cpuUtilization": 92,
+        "memUtilizationPct": 78,
+        "imagePullFailures": 85,
+        "workload": "video-analytics",
+        "nodeVersion": "v1.30.2"
+      },
+      "impact": { "unit": "workloads", "count": 12, "scope": "single" }
+    }
+  ]
+}
