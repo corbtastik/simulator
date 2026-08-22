@@ -32,8 +32,8 @@ const FALLBACKS = {
   delayJitterSec: 10,
   pFixProbability: 0.92,
   maxDelaySec: 2 * 60 * 60, // 2h
-  policy: 'infra-first',
-  version: '2.0.0-phase2'
+  policy: 'all-categories',
+  version: '2.0.0-phase3'
 };
 
 // Build defaults from CONFIG.REPAIR with fallbacks
@@ -106,11 +106,21 @@ const SCHED = {
 
 function nowIso() { return new Date().toISOString(); }
 
+// Valid categories for repair scheduling
+const VALID_CATEGORIES = new Set([
+  'business', 'consumer', 'federal', 'emerging_tech', 'infrastructure'
+]);
+
 function chooseCategoryFrom(issue) {
+  // Prefer the actual category field from the incident
+  const cat = issue?.category?.toString().toLowerCase().replace(/\s+/g, '_');
+  if (cat && VALID_CATEGORIES.has(cat)) return cat;
+
+  // Fallback: infer from type (legacy/safety)
   const t = issue?.type?.toString().toLowerCase();
   if (t && INFRA_TYPES.has(t)) return 'infrastructure';
   if (t && /cell|tower|fiber|backhaul|datacenter|edge|transport|core/.test(t)) return 'infrastructure';
-  return 'infrastructure';
+  return 'infrastructure'; // ultimate fallback
 }
 
 async function fetchRecentIncidents(simRunId, limit, recentWindowSec) {
@@ -155,7 +165,7 @@ function sampleLogNormalSeconds(rngFn, { medianSec, p95Sec }) {
   return Math.max(1, Math.round(ln));
 }
 
-async function insertFixAfterDelay({ incidentId, category, simRunId, reason, policy, version }) {
+async function insertFixAfterDelay({ incidentId, category, simRunId, reason, policy, version, repairStartedAt }) {
   try {
     const res = await insertFixEvent(undefined, {
       type: 'fix',
@@ -165,7 +175,8 @@ async function insertFixAfterDelay({ incidentId, category, simRunId, reason, pol
       reason,
       policy,
       version,
-      ts: new Date(),
+      repairStartedAt,  // when repair was scheduled
+      ts: new Date(),   // when fix was persisted (resolvedAt)
     });
     if (res.duplicate) SCHED.duplicatesIgnored += 1;
     else if (res.inserted) SCHED.persisted += 1;
@@ -174,17 +185,42 @@ async function insertFixAfterDelay({ incidentId, category, simRunId, reason, pol
   }
 }
 
+async function insertRepairStarted({ incidentId, category, simRunId, reason, policy, version, repairStartedAt, expectedDurationMs }) {
+  try {
+    const res = await insertFixEvent(undefined, {
+      type: 'repair_started',
+      category,
+      simRunId,
+      incidentId,
+      reason,
+      policy,
+      version,
+      repairStartedAt,
+      expectedFixAt: new Date(repairStartedAt.getTime() + expectedDurationMs),
+      ts: repairStartedAt,
+    });
+    // Don't count these in persisted - they're not fixes
+  } catch (e) {
+    console.error('[repair][repair_started][error]', e?.message || e);
+  }
+}
+
 function scheduleFixTimer({ incidentId, category, simRunId, reason, policy, version, delayMs }) {
   const k = String(incidentId);
   if (SCHED.timersByIncident.has(k)) return false;
 
+  const repairStartedAt = new Date();  // capture when repair was scheduled
   const dueAt = new Date(Date.now() + delayMs);
+
+  // Immediately emit repair_started event so visualizer can start blinking
+  insertRepairStarted({ incidentId, category, simRunId, reason, policy, version, repairStartedAt, expectedDurationMs: delayMs });
+
   const t = setTimeout(async () => {
-    try { await insertFixAfterDelay({ incidentId, category, simRunId, reason, policy, version }); }
+    try { await insertFixAfterDelay({ incidentId, category, simRunId, reason, policy, version, repairStartedAt }); }
     finally { SCHED.timersByIncident.delete(k); }
   }, delayMs);
 
-  SCHED.timersByIncident.set(k, { t, dueAt });
+  SCHED.timersByIncident.set(k, { t, dueAt, repairStartedAt });
   SCHED.scheduled += 1;
   return true;
 }
@@ -196,15 +232,15 @@ async function tick() {
   try {
     const batchHint = SCHED.budgetPerTick * 5;
     const pool = await fetchRecentIncidents(SCHED.simRunId, batchHint, SCHED.recentWindowSec);
-    const infraPool = pool.filter((d) => chooseCategoryFrom(d.serviceIssue) === 'infrastructure');
+    // Process all categories (no longer filtering to infrastructure only)
 
-    const picker = deterministicPicker(SCHED.rngFn, infraPool);
+    const picker = deterministicPicker(SCHED.rngFn, pool);
     let emitted = 0;
 
     for (const d of picker) {
       if (emitted >= SCHED.budgetPerTick) break;
 
-      const category = 'infrastructure';
+      const category = chooseCategoryFrom(d.serviceIssue);
       const deterministicKey = `${SCHED.simRunId}:${category}:${d._id.toString()}:${SCHED.version}`;
 
       const log = {
@@ -213,7 +249,7 @@ async function tick() {
         category,
         incidentId: d._id,
         action: 'WOULD_FIX',
-        reason: 'infra-first: recent && sample',
+        reason: 'all-categories: recent && sample',
         policy: SCHED.policy,
         version: SCHED.version,
         deterministicKey,

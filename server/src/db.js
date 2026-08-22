@@ -130,7 +130,7 @@ export async function insertFixEvent(passedDb, doc) {
   const _db = passedDb || getDb();
   const fixColl = _db.collection(CONFIG.FIX_COLL_NAME);
   try {
-    const res = await fixColl.insertOne(doc, { bypassDocumentValidation: true });
+    const res = await fixColl.insertOne(doc);
     return { ok: true, inserted: !!res?.acknowledged, duplicate: false };
   } catch (err) {
     if (err?.code === 11000) {
