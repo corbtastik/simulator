@@ -103,10 +103,11 @@ export async function ensureFixEventsIndexes(passedDb) {
   const _db = passedDb || getDb();
   const fixColl = _db.collection(CONFIG.FIX_COLL_NAME);
 
-  // Uniqueness: one fix per incident per run
+  // Uniqueness: one event per type per incident per run
+  // (allows both repair_started and fix events for same incident)
   await fixColl.createIndex(
-    { simRunId: 1, incidentId: 1 },
-    { name: 'uniq_fix_per_run_incident', unique: true }
+    { simRunId: 1, incidentId: 1, type: 1 },
+    { name: 'uniq_event_per_run_incident_type', unique: true }
   );
 
   // Query helper: newest fixes within a run
