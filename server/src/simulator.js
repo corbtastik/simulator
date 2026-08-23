@@ -1,4 +1,6 @@
 // server/simulator.js
+import fs from 'fs/promises';
+import path from 'path';
 import { CONFIG, buildSimRunId } from './config.js';
 import { connectDB, insertSimRun, endSimRun } from './db.js';
 import { loadCityModel, pickCity, jitterPoint } from './cityModel.js';
@@ -21,6 +23,11 @@ const SIM = {
     repairsEnabled: false,   // single toggle
     scenariosEnabled: false, // inject scripted scenarios
     scenarios: [],           // list of scenario IDs to inject
+    // Repeatable mode
+    genMode: 'continuous',   // 'continuous' | 'repeatable'
+    datasetName: null,
+    repeatableCount: 1000,
+    outputMode: 'both',      // 'atlas' | 'json' | 'both'
   },
   workers: [],
   stats: {
@@ -31,15 +38,18 @@ const SIM = {
     activeWorkers: 0,
   },
   model: null,
+  // Repeatable mode progress
+  repeatableProgress: null, // { current: 0, total: 1000, outputMode: 'both' }
 };
 
 export function getStatus() {
-  const { eventsPerSec, batchSize, spread, seed, concurrency } = SIM.params;
+  const { eventsPerSec, batchSize, spread, seed, concurrency, genMode } = SIM.params;
   const insertsPerSecMA = movingAverage(SIM.stats.history, SIM.stats.insertsPerSecWindow);
   const run = getRunState();
   return {
     running: SIM.running,
     eventsPerSec, batchSize, spread, seed, concurrency,
+    genMode,
     cityModelSize: SIM.stats.cityModelSize,
     insertsPerSecMA,
     insertsPerSecWindow: SIM.stats.insertsPerSecWindow,
@@ -48,6 +58,7 @@ export function getStatus() {
     simRunId: run.simRunId,
     runStartedAt: run.startedAt,
     runParams: run.params,
+    repeatableProgress: SIM.repeatableProgress,
   };
 }
 
@@ -69,7 +80,20 @@ export async function startSimulator(input) {
   p.scenarios = Array.isArray(input?.scenarios)
     ? input.scenarios.filter(s => typeof s === 'string')
     : (p.scenariosEnabled ? listScenarios() : []); // default: all scenarios if enabled
+
+  // Repeatable mode params
+  p.genMode = input?.genMode === 'repeatable' ? 'repeatable' : 'continuous';
+  p.datasetName = typeof input?.datasetName === 'string' ? input.datasetName.trim() : 'demo-v1';
+  p.repeatableCount = Math.max(1, Math.min(100000, Number(input?.repeatableCount) || 1000));
+  p.outputMode = ['atlas', 'json', 'both'].includes(input?.outputMode) ? input.outputMode : 'both';
+
+  // Use datasetName as seed for repeatable mode
+  if (p.genMode === 'repeatable' && !p.seed) {
+    p.seed = hashString(p.datasetName);
+  }
+
   SIM.params = p;
+  SIM.repeatableProgress = null;
 
   const { db, coll } = await connectDB();
 
@@ -137,10 +161,6 @@ export async function startSimulator(input) {
     console.error('[simulator] repairScheduler.start failed:', e?.message || e);
   }
 
-  // spin up workers
-  const base = Math.floor(p.eventsPerSec / p.concurrency);
-  const remainder = p.eventsPerSec % p.concurrency;
-
   SIM.running = true;
   SIM.stats.history = [];
   SIM.stats.lastTickInserted = 0;
@@ -148,6 +168,34 @@ export async function startSimulator(input) {
   SIM.stats.activeWorkers = 0;
 
   const { rand, gaussian } = makeRNG(p.seed);
+
+  // Repeatable mode: generate fixed count and stop
+  if (p.genMode === 'repeatable') {
+    SIM.repeatableProgress = {
+      current: 0,
+      total: p.repeatableCount,
+      outputMode: p.outputMode,
+      datasetName: p.datasetName,
+    };
+
+    const cancel = runRepeatableWorker({
+      count: p.repeatableCount,
+      batchSize: p.batchSize,
+      spread: p.spread,
+      rand,
+      gaussian,
+      coll,
+      simRunId: runId,
+      outputMode: p.outputMode,
+      datasetName: p.datasetName,
+    });
+    SIM.workers.push(cancel);
+    return getStatus();
+  }
+
+  // Continuous mode: spin up workers as before
+  const base = Math.floor(p.eventsPerSec / p.concurrency);
+  const remainder = p.eventsPerSec % p.concurrency;
 
   for (let i = 0; i < p.concurrency; i++) {
     const targetEps = base + (i < remainder ? 1 : 0);
@@ -303,3 +351,168 @@ function runWorker({ eps, batchSize, spread, rand, gaussian, coll, simRunId }) {
 }
 
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+/** Simple string hash for deterministic seed from dataset name */
+function hashString(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  return Math.abs(hash);
+}
+
+/** Output directory for repeatable JSON datasets */
+const REPEATABLE_OUTPUT_DIR = path.join(process.cwd(), 'data', 'generated-incidents');
+
+/** Write incidents to JSON files */
+async function writeRepeatableJson(datasetName, incidents) {
+  const outputDir = path.join(REPEATABLE_OUTPUT_DIR, datasetName);
+  await fs.mkdir(outputDir, { recursive: true });
+
+  // Group by category
+  const byCategory = {};
+  for (const inc of incidents) {
+    const cat = inc.serviceIssue?.category || 'unknown';
+    if (!byCategory[cat]) byCategory[cat] = [];
+    byCategory[cat].push(inc);
+  }
+
+  // Write category files
+  for (const [cat, docs] of Object.entries(byCategory)) {
+    const catDir = path.join(outputDir, cat);
+    await fs.mkdir(catDir, { recursive: true });
+    await fs.writeFile(
+      path.join(catDir, 'incidents.json'),
+      JSON.stringify(docs, null, 2)
+    );
+  }
+
+  // Write combined file
+  await fs.writeFile(
+    path.join(outputDir, 'all-incidents.json'),
+    JSON.stringify(incidents, null, 2)
+  );
+
+  // Write manifest
+  const manifest = {
+    datasetName,
+    generatedAt: new Date().toISOString(),
+    totalCount: incidents.length,
+    byCategory: Object.fromEntries(
+      Object.entries(byCategory).map(([k, v]) => [k, v.length])
+    ),
+  };
+  await fs.writeFile(
+    path.join(outputDir, 'manifest.json'),
+    JSON.stringify(manifest, null, 2)
+  );
+
+  console.log(`[simulator] Wrote ${incidents.length} incidents to ${outputDir}`);
+  return outputDir;
+}
+
+/** Repeatable mode worker: generates fixed count of incidents, then stops */
+function runRepeatableWorker({ count, batchSize, spread, rand, gaussian, coll, simRunId, outputMode, datasetName }) {
+  if (!simRunId) console.error('[simulator] runRepeatableWorker started without simRunId');
+  let alive = true;
+  SIM.stats.activeWorkers += 1;
+
+  const allIncidents = []; // collect for JSON output
+
+  const tick = async () => {
+    try {
+      let generated = 0;
+
+      while (SIM.running && alive && generated < count) {
+        const start = Date.now();
+        const remaining = count - generated;
+        const thisBatch = Math.min(batchSize, remaining);
+        const docs = new Array(thisBatch);
+
+        for (let i = 0; i < thisBatch; i++) {
+          const c = pickCity(SIM.model, rand);
+          const p = jitterPoint(c, spread, gaussian);
+          const serviceIssue = makeServiceIssue(rand, c.name, { simRunId });
+          const severityMeta = SEVERITY_MAP[serviceIssue.severity] ?? { weight: 2, sigmaKm: 5 };
+
+          docs[i] = {
+            type: 'incident',
+            ts: new Date(),
+            loc: { type: 'Point', coordinates: [p.lng, p.lat] },
+            city: c.name,
+            state: c.state,
+            lat: p.lat,
+            lng: p.lng,
+            weight: severityMeta.weight,
+            sigmaKm: severityMeta.sigmaKm,
+            serviceIssue,
+            simRunId,
+          };
+        }
+
+        // Insert to Atlas if outputMode includes it
+        if (outputMode === 'atlas' || outputMode === 'both') {
+          try {
+            const res = await coll.insertMany(docs, { ordered: false });
+            SIM.stats.history.push(res.insertedCount ?? docs.length);
+          } catch {
+            SIM.stats.history.push(docs.length);
+          }
+        }
+
+        // Collect for JSON output
+        if (outputMode === 'json' || outputMode === 'both') {
+          allIncidents.push(...docs);
+        }
+
+        generated += thisBatch;
+
+        // Update progress
+        SIM.repeatableProgress = {
+          ...SIM.repeatableProgress,
+          current: generated,
+        };
+
+        if (SIM.stats.history.length > 300) {
+          SIM.stats.history.splice(0, SIM.stats.history.length - 300);
+        }
+
+        // Small delay to prevent blocking (but much faster than continuous mode)
+        const elapsed = Date.now() - start;
+        if (elapsed < 50) await sleep(50 - elapsed);
+      }
+
+      // Write JSON output if requested
+      if ((outputMode === 'json' || outputMode === 'both') && allIncidents.length > 0) {
+        try {
+          await writeRepeatableJson(datasetName, allIncidents);
+        } catch (err) {
+          console.error('[simulator] Failed to write JSON output:', err?.message || err);
+        }
+      }
+
+      console.log(`[simulator] Repeatable mode complete: ${generated} incidents generated`);
+
+      // Auto-stop the simulator
+      SIM.repeatableProgress = {
+        ...SIM.repeatableProgress,
+        current: generated,
+        complete: true,
+      };
+
+    } finally {
+      SIM.stats.activeWorkers = Math.max(0, SIM.stats.activeWorkers - 1);
+      // Trigger graceful stop
+      if (SIM.running) {
+        stopSimulator().catch(err => {
+          console.error('[simulator] Auto-stop failed:', err?.message || err);
+        });
+      }
+    }
+  };
+
+  tick();
+  return () => { alive = false; };
+}

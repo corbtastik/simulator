@@ -63,6 +63,12 @@ export default function App() {
   const [seed, setSeed] = useState("");
   const [concurrency, setConcurrency] = useState(1);
 
+  // Repeatable mode
+  const [genMode, setGenMode] = useState("continuous"); // "continuous" | "repeatable"
+  const [datasetName, setDatasetName] = useState("demo-v1");
+  const [repeatableCount, setRepeatableCount] = useState(1000);
+  const [outputMode, setOutputMode] = useState("both"); // "atlas" | "json" | "both"
+
   // Controls
   const [note, setNote] = useState(""); // Sim Run Note (optional)
   const [repairsEnabled, setRepairsEnabled] = useState(false); // single toggle (always persists)
@@ -126,6 +132,13 @@ export default function App() {
       repairsEnabled: !!repairsEnabled, // single flag; scheduler always persists when enabled
       scenariosEnabled: !!scenariosEnabled,
       scenarios: scenariosEnabled ? scenarios : [],
+      // Repeatable mode fields
+      genMode,
+      ...(genMode === "repeatable" && {
+        datasetName: datasetName?.trim() || "demo-v1",
+        repeatableCount: Math.max(1, Number(repeatableCount)),
+        outputMode,
+      }),
     };
 
     try {
@@ -204,12 +217,99 @@ export default function App() {
           <label>Sim Run Note</label>
           <input
             type="text"
-            placeholder="Why you’re running this (optional)"
+            placeholder="Why you're running this (optional)"
             value={note}
             onChange={(e) => setNote(e.target.value)}
             maxLength={200}
           />
         </div>
+
+        <Divider />
+
+        {/* --- Generation Mode --- */}
+        <div className="row" style={{ alignItems: "flex-start", gap: 12, flexDirection: "column" }}>
+          <label style={{ fontWeight: 600, marginBottom: 4 }}>Generation Mode</label>
+          <div style={{ display: "flex", gap: 20 }}>
+            <label style={{ display: "flex", gap: 8, alignItems: "center", cursor: "pointer" }}>
+              <input
+                type="radio"
+                name="genMode"
+                checked={genMode === "continuous"}
+                onChange={() => setGenMode("continuous")}
+              />
+              <span>Continuous</span>
+              <span style={{ opacity: 0.6, fontSize: 12 }}>— streams indefinitely</span>
+            </label>
+            <label style={{ display: "flex", gap: 8, alignItems: "center", cursor: "pointer" }}>
+              <input
+                type="radio"
+                name="genMode"
+                checked={genMode === "repeatable"}
+                onChange={() => setGenMode("repeatable")}
+              />
+              <span>Repeatable</span>
+              <span style={{ opacity: 0.6, fontSize: 12 }}>— fixed dataset</span>
+            </label>
+          </div>
+
+        </div>
+
+        {genMode === "repeatable" && (
+          <>
+            <Divider />
+            <div className="row">
+              <label>Dataset Name</label>
+              <input
+                type="text"
+                placeholder="demo-v1"
+                value={datasetName}
+                onChange={(e) => setDatasetName(e.target.value)}
+              />
+              <span style={{ opacity: 0.6, fontSize: 12, marginLeft: 8 }}>used as seed for reproducibility</span>
+            </div>
+            <div className="row">
+              <label>Count</label>
+              <input
+                type="number"
+                min="1"
+                max="100000"
+                value={repeatableCount}
+                onChange={(e) => setRepeatableCount(e.target.value)}
+              />
+              <span style={{ opacity: 0.6, fontSize: 12, marginLeft: 8 }}>incidents to generate</span>
+            </div>
+            <div className="row" style={{ alignItems: "center", gap: 16 }}>
+              <label style={{ minWidth: 60 }}>Output</label>
+              <label style={{ display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}>
+                <input
+                  type="radio"
+                  name="outputMode"
+                  checked={outputMode === "atlas"}
+                  onChange={() => setOutputMode("atlas")}
+                />
+                Atlas
+              </label>
+              <label style={{ display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}>
+                <input
+                  type="radio"
+                  name="outputMode"
+                  checked={outputMode === "json"}
+                  onChange={() => setOutputMode("json")}
+                />
+                JSON
+              </label>
+              <label style={{ display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}>
+                <input
+                  type="radio"
+                  name="outputMode"
+                  checked={outputMode === "both"}
+                  onChange={() => setOutputMode("both")}
+                />
+                Both
+              </label>
+            </div>
+          </>
+        )}
 
         <Divider />
 
@@ -384,7 +484,37 @@ export default function App() {
               DB Count: <b className="mono">{persistedDb}</b>
             </span>
           )}
+
+          {/* Repeatable mode progress */}
+          {status?.repeatableProgress && (
+            <span className="pill pill--info" title="Repeatable mode progress">
+              Progress: <b className="mono">{status.repeatableProgress.current} / {status.repeatableProgress.total}</b>
+            </span>
+          )}
         </div>
+
+        {/* Progress bar for repeatable mode */}
+        {running && status?.repeatableProgress && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{
+              background: "var(--border-color, rgba(255,255,255,0.12))",
+              borderRadius: 6,
+              height: 8,
+              overflow: "hidden"
+            }}>
+              <div style={{
+                background: "var(--accent, #3b82f6)",
+                height: "100%",
+                width: `${Math.min(100, (status.repeatableProgress.current / status.repeatableProgress.total) * 100)}%`,
+                transition: "width 0.3s ease"
+              }} />
+            </div>
+            <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4, textAlign: "center" }}>
+              {Math.round((status.repeatableProgress.current / status.repeatableProgress.total) * 100)}% complete
+              {status.repeatableProgress.outputMode && ` — Output: ${status.repeatableProgress.outputMode}`}
+            </div>
+          </div>
+        )}
 
         <pre className="status-json">
 {JSON.stringify(

@@ -61,3 +61,6 @@ dump/
 
 # ---- Mac sandbox artifacts (sometimes appear) ----
 ._*
+
+# Generated incident datasets (output files)
+server/data/generated-incidents/
