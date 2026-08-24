@@ -4,9 +4,15 @@
 
 import fs from 'fs/promises';
 import path from 'path';
+import { EventEmitter } from 'events';
 import { Storage } from '@google-cloud/storage';
 import { CONFIG } from './config.js';
 import { embedImage } from './voyageai.js';
+
+// Increase default max listeners to avoid warnings during rapid sequential GCS downloads.
+// Default is 10, but we may download 30+ images in a batch (30% of 100 incidents).
+// The warning comes from internal PassThrough streams in @google-cloud/storage.
+EventEmitter.defaultMaxListeners = 50;
 
 // GCS client (lazy initialized)
 let gcsStorage = null;
