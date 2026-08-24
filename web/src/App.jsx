@@ -69,6 +69,8 @@ export default function App() {
   const [repeatableCount, setRepeatableCount] = useState(1000);
   const [outputMode, setOutputMode] = useState("both"); // "atlas" | "json" | "both"
   const [mediaEnabled, setMediaEnabled] = useState(true); // attach images with embeddings
+  const [mediaSource, setMediaSource] = useState("local"); // "local" | "gcs"
+  const [mediaDataset, setMediaDataset] = useState("demo-v1"); // dataset name for GCS
 
   // Controls
   const [note, setNote] = useState(""); // Sim Run Note (optional)
@@ -140,6 +142,8 @@ export default function App() {
         repeatableCount: Math.max(1, Number(repeatableCount)),
         outputMode,
         mediaEnabled: !!mediaEnabled,
+        mediaSource,
+        mediaDataset: mediaDataset?.trim() || "demo-v1",
       }),
     };
 
@@ -321,6 +325,44 @@ export default function App() {
                 <span style={{ opacity: 0.6, fontSize: 12 }}>— multimodal embeddings (~30% of incidents)</span>
               </label>
             </div>
+
+            {mediaEnabled && (
+              <>
+                <div className="row" style={{ marginTop: 8, alignItems: "center", gap: 16, marginLeft: 24 }}>
+                  <label style={{ minWidth: 80 }}>Image Source</label>
+                  <label style={{ display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}>
+                    <input
+                      type="radio"
+                      name="mediaSource"
+                      checked={mediaSource === "local"}
+                      onChange={() => setMediaSource("local")}
+                    />
+                    Local
+                  </label>
+                  <label style={{ display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}>
+                    <input
+                      type="radio"
+                      name="mediaSource"
+                      checked={mediaSource === "gcs"}
+                      onChange={() => setMediaSource("gcs")}
+                    />
+                    GCS Bucket
+                  </label>
+                </div>
+                {mediaSource === "gcs" && (
+                  <div className="row" style={{ marginTop: 4, marginLeft: 24 }}>
+                    <label style={{ minWidth: 80 }}>Dataset</label>
+                    <input
+                      type="text"
+                      placeholder="demo-v1"
+                      value={mediaDataset}
+                      onChange={(e) => setMediaDataset(e.target.value)}
+                      style={{ maxWidth: 200 }}
+                    />
+                  </div>
+                )}
+              </>
+            )}
           </>
         )}
 

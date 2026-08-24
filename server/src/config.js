@@ -34,9 +34,18 @@ export const CONFIG = {
   ATLAS_MODEL_API_KEY: process.env.ATLAS_MODEL_API_KEY ?? null,
   MEDIA_ENABLED: envBool(process.env.MEDIA_ENABLED, false),
   MEDIA_ATTACHMENT_RATE: Number(process.env.MEDIA_ATTACHMENT_RATE ?? 0.3),
+  MEDIA_COLL_NAME: process.env.MEDIA_COLL_NAME ?? 'incident_media',
+
+  // Media source: 'local' or 'gcs'
+  MEDIA_SOURCE: process.env.MEDIA_SOURCE ?? 'local',
+
+  // Local file system source
   MEDIA_IMAGES_DIR: process.env.MEDIA_IMAGES_DIR ??
     path.resolve(__dirname, '../../../scripts/generated-images-data/demo-v1'),
-  MEDIA_COLL_NAME: process.env.MEDIA_COLL_NAME ?? 'incident_media',
+
+  // GCS bucket source (requires GOOGLE_APPLICATION_CREDENTIALS env var)
+  MEDIA_GCS_BUCKET: process.env.MEDIA_GCS_BUCKET ?? 'incident-app',
+  MEDIA_DATASET: process.env.MEDIA_DATASET ?? 'demo-v1',
 
   // --- Phase 3: fix_events persistence ---
   // Target collection for Phase 3 ingest (incidents.<FIX_COLL_NAME>)

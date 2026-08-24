@@ -1,66 +1,133 @@
 // server/src/mediaService.js
 // Image selection, caption generation, and embedding for incidents
+// Supports both local filesystem and GCS bucket sources
 
 import fs from 'fs/promises';
 import path from 'path';
+import { Storage } from '@google-cloud/storage';
 import { CONFIG } from './config.js';
 import { embedImage } from './voyageai.js';
 
-// Path to generated images (from OpenAI script)
-const IMAGES_DIR = CONFIG.MEDIA_IMAGES_DIR;
+// GCS client (lazy initialized)
+let gcsStorage = null;
 
-// Cache of available images per category
+function getGcsStorage() {
+  if (!gcsStorage) {
+    gcsStorage = new Storage();
+  }
+  return gcsStorage;
+}
+
+// Cache of available images (shared across sources)
 let imageCache = null;
+let currentSource = null;
+let currentDataset = null;
 
 /**
- * Load available images from the images directory
+ * Load available images from local filesystem
  * Structure: {category}/{type}-{id}.png
  */
-async function loadImageCache() {
-  if (imageCache) return imageCache;
-
-  imageCache = {};
+async function loadLocalImageCache(imagesDir) {
+  const cache = {};
 
   try {
-    const categories = await fs.readdir(IMAGES_DIR);
+    const categories = await fs.readdir(imagesDir);
 
     for (const cat of categories) {
-      const catPath = path.join(IMAGES_DIR, cat);
+      const catPath = path.join(imagesDir, cat);
       const stat = await fs.stat(catPath);
 
       if (stat.isDirectory()) {
         const files = await fs.readdir(catPath);
         const images = files.filter(f => /\.(png|jpg|jpeg|webp)$/i.test(f));
 
-        // Group by type (filename format: {type}-{id}.png)
-        imageCache[cat] = {};
+        cache[cat] = {};
         for (const img of images) {
           const match = img.match(/^([a-z0-9_-]+)-[a-f0-9]+\.(png|jpg|jpeg|webp)$/i);
           if (match) {
             const type = match[1];
-            if (!imageCache[cat][type]) imageCache[cat][type] = [];
-            imageCache[cat][type].push(img);
+            if (!cache[cat][type]) cache[cat][type] = [];
+            cache[cat][type].push(img);
           } else {
-            // Fallback: put in 'general' bucket
-            if (!imageCache[cat]['general']) imageCache[cat]['general'] = [];
-            imageCache[cat]['general'].push(img);
+            if (!cache[cat]['general']) cache[cat]['general'] = [];
+            cache[cat]['general'].push(img);
           }
         }
       }
     }
-
-    const totalImages = Object.values(imageCache).reduce(
-      (sum, cat) => sum + Object.values(cat).reduce((s, arr) => s + arr.length, 0),
-      0
-    );
-    console.log(`[mediaService] Loaded ${totalImages} images across ${Object.keys(imageCache).length} categories`);
-
   } catch (err) {
-    console.error('[mediaService] Failed to load image cache:', err.message);
-    imageCache = {};
+    console.error('[mediaService] Failed to load local image cache:', err.message);
   }
 
+  return cache;
+}
+
+/**
+ * Load available images from GCS bucket manifest
+ */
+async function loadGcsImageCache(bucket, dataset) {
+  const cache = {};
+
+  try {
+    const storage = getGcsStorage();
+    const manifestPath = `incident-media/datasets/${dataset}/manifest.json`;
+
+    const [content] = await storage.bucket(bucket).file(manifestPath).download();
+    const manifest = JSON.parse(content.toString());
+
+    for (const img of manifest.images) {
+      const { category, type, filename } = img;
+      if (!cache[category]) cache[category] = {};
+      if (!cache[category][type]) cache[category][type] = [];
+      cache[category][type].push({
+        filename: filename.split('/').pop(), // just the filename
+        gcsPath: `incident-media/datasets/${dataset}/images/${filename}`,
+        ...img
+      });
+    }
+
+    console.log(`[mediaService] Loaded GCS manifest: ${manifest.totalImages} images from ${dataset}`);
+  } catch (err) {
+    console.error('[mediaService] Failed to load GCS manifest:', err.message);
+  }
+
+  return cache;
+}
+
+/**
+ * Load image cache based on source type
+ */
+async function loadImageCache(source = CONFIG.MEDIA_SOURCE, dataset = CONFIG.MEDIA_DATASET) {
+  // Return cached if source/dataset unchanged
+  if (imageCache && currentSource === source && currentDataset === dataset) {
+    return imageCache;
+  }
+
+  currentSource = source;
+  currentDataset = dataset;
+
+  if (source === 'gcs') {
+    imageCache = await loadGcsImageCache(CONFIG.MEDIA_GCS_BUCKET, dataset);
+  } else {
+    imageCache = await loadLocalImageCache(CONFIG.MEDIA_IMAGES_DIR);
+  }
+
+  const totalImages = Object.values(imageCache).reduce(
+    (sum, cat) => sum + Object.values(cat).reduce((s, arr) => s + arr.length, 0),
+    0
+  );
+  console.log(`[mediaService] Loaded ${totalImages} images from ${source} (dataset: ${dataset})`);
+
   return imageCache;
+}
+
+/**
+ * Clear image cache (useful when switching sources)
+ */
+export function clearImageCache() {
+  imageCache = null;
+  currentSource = null;
+  currentDataset = null;
 }
 
 /**
@@ -68,10 +135,12 @@ async function loadImageCache() {
  * @param {string} category - Incident category (e.g., 'infrastructure')
  * @param {string} type - Incident type (e.g., 'backhaul')
  * @param {function} rand - Optional random function (for seeded selection)
- * @returns {Promise<{filename, path, category, type}|null>}
+ * @param {string} source - 'local' or 'gcs'
+ * @param {string} dataset - Dataset name for GCS
+ * @returns {Promise<{filename, source, path?, gcsPath?, category, type}|null>}
  */
-export async function selectImageForIncident(category, type, rand = Math.random) {
-  const cache = await loadImageCache();
+export async function selectImageForIncident(category, type, rand = Math.random, source = CONFIG.MEDIA_SOURCE, dataset = CONFIG.MEDIA_DATASET) {
+  const cache = await loadImageCache(source, dataset);
 
   // Try exact category + type match
   let images = cache[category]?.[type] || [];
@@ -94,12 +163,40 @@ export async function selectImageForIncident(category, type, rand = Math.random)
 
   const selected = images[Math.floor(rand() * images.length)];
 
-  return {
-    filename: selected,
-    path: path.join(IMAGES_DIR, category, selected),
-    category,
-    type
-  };
+  // Handle both local (string) and GCS (object) formats
+  if (typeof selected === 'string') {
+    // Local format
+    return {
+      filename: selected,
+      source: 'local',
+      path: path.join(CONFIG.MEDIA_IMAGES_DIR, category, selected),
+      category,
+      type
+    };
+  } else {
+    // GCS format (object from manifest)
+    return {
+      filename: selected.filename,
+      source: 'gcs',
+      gcsPath: selected.gcsPath,
+      category: selected.category,
+      type: selected.type
+    };
+  }
+}
+
+/**
+ * Get image buffer from local or GCS source
+ */
+async function getImageBuffer(imageInfo) {
+  if (imageInfo.source === 'local') {
+    return fs.readFile(imageInfo.path);
+  } else if (imageInfo.source === 'gcs') {
+    const storage = getGcsStorage();
+    const [content] = await storage.bucket(CONFIG.MEDIA_GCS_BUCKET).file(imageInfo.gcsPath).download();
+    return content;
+  }
+  throw new Error(`Unknown image source: ${imageInfo.source}`);
 }
 
 /**
@@ -123,16 +220,20 @@ export function generateCaption(incident, imageInfo) {
  * @param {Object} incident - The incident document
  * @param {string} simRunId - Current simulation run ID
  * @param {function} rand - Optional random function for image selection
+ * @param {string} source - 'local' or 'gcs'
+ * @param {string} dataset - Dataset name for GCS
  * @returns {Promise<Object|null>} - Media document ready for insertion, or null
  */
-export async function createMediaDocument(incident, simRunId, rand = Math.random) {
+export async function createMediaDocument(incident, simRunId, rand = Math.random, source = CONFIG.MEDIA_SOURCE, dataset = CONFIG.MEDIA_DATASET) {
   const { serviceIssue } = incident;
   if (!serviceIssue) return null;
 
   const imageInfo = await selectImageForIncident(
     serviceIssue.category,
     serviceIssue.type,
-    rand
+    rand,
+    source,
+    dataset
   );
 
   if (!imageInfo) {
@@ -140,10 +241,10 @@ export async function createMediaDocument(incident, simRunId, rand = Math.random
   }
 
   try {
-    const imageBuffer = await fs.readFile(imageInfo.path);
+    const imageBuffer = await getImageBuffer(imageInfo);
     const caption = generateCaption(incident, imageInfo);
 
-    console.log(`[mediaService] Embedding image for ${incident.city}: ${imageInfo.filename}`);
+    console.log(`[mediaService] Embedding image for ${incident.city}: ${imageInfo.filename} (${imageInfo.source})`);
     const embedding = await embedImage(imageBuffer, caption);
 
     return {
@@ -153,6 +254,8 @@ export async function createMediaDocument(incident, simRunId, rand = Math.random
       category: imageInfo.category,
       type: imageInfo.type,
       filename: imageInfo.filename,
+      source: imageInfo.source,
+      dataset: source === 'gcs' ? dataset : null,
       caption,
       embedding,
       ts: new Date()
@@ -167,8 +270,8 @@ export async function createMediaDocument(incident, simRunId, rand = Math.random
 /**
  * Check if media service is properly configured
  */
-export async function isMediaServiceReady() {
-  if (!CONFIG.MEDIA_ENABLED) {
+export async function isMediaServiceReady(source = CONFIG.MEDIA_SOURCE, dataset = CONFIG.MEDIA_DATASET) {
+  if (!CONFIG.MEDIA_ENABLED && source === CONFIG.MEDIA_SOURCE) {
     return { ready: false, reason: 'MEDIA_ENABLED is false' };
   }
 
@@ -177,20 +280,79 @@ export async function isMediaServiceReady() {
   }
 
   try {
-    await fs.access(IMAGES_DIR);
-    const cache = await loadImageCache();
-    const totalImages = Object.values(cache).reduce(
-      (sum, cat) => sum + Object.values(cat).reduce((s, arr) => s + arr.length, 0),
-      0
-    );
+    if (source === 'gcs') {
+      // Check GCS access
+      const storage = getGcsStorage();
+      const manifestPath = `incident-media/datasets/${dataset}/manifest.json`;
+      const [exists] = await storage.bucket(CONFIG.MEDIA_GCS_BUCKET).file(manifestPath).exists();
 
-    if (totalImages === 0) {
-      return { ready: false, reason: 'No images found in MEDIA_IMAGES_DIR' };
+      if (!exists) {
+        return { ready: false, reason: `GCS manifest not found: ${manifestPath}` };
+      }
+
+      const cache = await loadImageCache(source, dataset);
+      const totalImages = Object.values(cache).reduce(
+        (sum, cat) => sum + Object.values(cat).reduce((s, arr) => s + arr.length, 0),
+        0
+      );
+
+      return { ready: true, source: 'gcs', dataset, imageCount: totalImages };
+
+    } else {
+      // Check local filesystem
+      await fs.access(CONFIG.MEDIA_IMAGES_DIR);
+      const cache = await loadImageCache(source, dataset);
+      const totalImages = Object.values(cache).reduce(
+        (sum, cat) => sum + Object.values(cat).reduce((s, arr) => s + arr.length, 0),
+        0
+      );
+
+      if (totalImages === 0) {
+        return { ready: false, reason: 'No images found in MEDIA_IMAGES_DIR' };
+      }
+
+      return { ready: true, source: 'local', imageCount: totalImages };
     }
 
-    return { ready: true, imageCount: totalImages };
-
   } catch (err) {
-    return { ready: false, reason: `Cannot access MEDIA_IMAGES_DIR: ${err.message}` };
+    return { ready: false, reason: `Media service error: ${err.message}` };
+  }
+}
+
+/**
+ * List available datasets in GCS bucket
+ */
+export async function listGcsDatasets() {
+  try {
+    const storage = getGcsStorage();
+    const [files] = await storage.bucket(CONFIG.MEDIA_GCS_BUCKET).getFiles({
+      prefix: 'incident-media/datasets/',
+      delimiter: '/'
+    });
+
+    // Extract dataset names from prefixes
+    const datasets = [];
+    const prefixes = files.prefixes || [];
+    for (const prefix of prefixes) {
+      const match = prefix.match(/incident-media\/datasets\/([^/]+)\//);
+      if (match) datasets.push(match[1]);
+    }
+
+    // Also check for manifest files directly
+    const [manifestFiles] = await storage.bucket(CONFIG.MEDIA_GCS_BUCKET).getFiles({
+      prefix: 'incident-media/datasets/'
+    });
+
+    for (const file of manifestFiles) {
+      const match = file.name.match(/incident-media\/datasets\/([^/]+)\/manifest\.json/);
+      if (match && !datasets.includes(match[1])) {
+        datasets.push(match[1]);
+      }
+    }
+
+    return datasets;
+  } catch (err) {
+    console.error('[mediaService] Failed to list GCS datasets:', err.message);
+    return [];
   }
 }
