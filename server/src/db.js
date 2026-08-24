@@ -238,3 +238,53 @@ export async function countMediaDocs(passedDb, { simRunId } = {}) {
   const filter = simRunId ? { simRunId } : {};
   return _db.collection(CONFIG.MEDIA_COLL_NAME).countDocuments(filter);
 }
+
+/**
+ * Vector search on incident_media collection
+ * @param {number[]} queryVector - 1024-dimensional embedding vector
+ * @param {Object} options - Search options
+ * @param {string} [options.simRunId] - Filter by simulation run
+ * @param {string} [options.category] - Filter by incident category
+ * @param {number} [options.limit=10] - Max results to return
+ * @param {number} [options.numCandidates=100] - Candidates to consider
+ * @returns {Promise<Array>} - Matching media documents with scores
+ */
+export async function vectorSearchMedia(passedDb, queryVector, options = {}) {
+  const _db = passedDb || getDb();
+  const { simRunId, category, limit = 10, numCandidates = 100 } = options;
+
+  // Build filter for pre-filtering (if provided)
+  const filter = {};
+  if (simRunId) filter.simRunId = simRunId;
+  if (category) filter.category = category;
+
+  const pipeline = [
+    {
+      $vectorSearch: {
+        index: 'incident_media_vector',
+        path: 'embedding',
+        queryVector,
+        numCandidates,
+        limit,
+        ...(Object.keys(filter).length > 0 ? { filter } : {})
+      }
+    },
+    {
+      $project: {
+        _id: 1,
+        incidentId: 1,
+        simRunId: 1,
+        category: 1,
+        type: 1,
+        filename: 1,
+        source: 1,
+        dataset: 1,
+        caption: 1,
+        ts: 1,
+        score: { $meta: 'vectorSearchScore' }
+      }
+    }
+  ];
+
+  return _db.collection(CONFIG.MEDIA_COLL_NAME).aggregate(pipeline).toArray();
+}

@@ -6,7 +6,9 @@ import {
   ensureSimRunsIndexes,
   ensureFixEventsIndexes,
   countFixEvents,
+  vectorSearchMedia,
 } from './db.js';
+import { embedQuery } from './voyageai.js';
 import { repairScheduler } from './repairScheduler.js';
 
 // Ensure DB + indexes once when routes are built
@@ -119,6 +121,42 @@ export function buildRoutes() {
       res.json({ ok: true, simulator, scheduler, persistedDb });
     } catch (e) {
       res.status(500).json({ ok: false, error: e.message ?? 'stop failed' });
+    }
+  });
+
+  /**
+   * POST /search/media
+   * Vector search for incident media using text query
+   * Body: { query: string, simRunId?: string, category?: string, limit?: number }
+   */
+  router.post('/search/media', async (req, res) => {
+    try {
+      const { query, simRunId, category, limit = 10 } = req.body || {};
+
+      if (!query || typeof query !== 'string' || query.trim().length === 0) {
+        return res.status(400).json({ ok: false, error: 'query is required' });
+      }
+
+      // Generate embedding for the search query
+      const queryVector = await embedQuery(query.trim());
+
+      // Perform vector search
+      const { db } = await connectDB();
+      const results = await vectorSearchMedia(db, queryVector, {
+        simRunId,
+        category,
+        limit: Math.min(Math.max(1, limit), 100) // clamp 1-100
+      });
+
+      res.json({
+        ok: true,
+        query: query.trim(),
+        count: results.length,
+        results
+      });
+    } catch (e) {
+      console.error('[routes]/search/media error:', e?.message || e);
+      res.status(500).json({ ok: false, error: e.message ?? 'search failed' });
     }
   });
 
