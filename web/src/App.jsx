@@ -68,6 +68,7 @@ export default function App() {
   const [datasetName, setDatasetName] = useState("demo-v1");
   const [repeatableCount, setRepeatableCount] = useState(1000);
   const [outputMode, setOutputMode] = useState("both"); // "atlas" | "json" | "both"
+  const [mediaEnabled, setMediaEnabled] = useState(true); // attach images with embeddings
 
   // Controls
   const [note, setNote] = useState(""); // Sim Run Note (optional)
@@ -138,6 +139,7 @@ export default function App() {
         datasetName: datasetName?.trim() || "demo-v1",
         repeatableCount: Math.max(1, Number(repeatableCount)),
         outputMode,
+        mediaEnabled: !!mediaEnabled,
       }),
     };
 
@@ -306,6 +308,17 @@ export default function App() {
                   onChange={() => setOutputMode("both")}
                 />
                 Both
+              </label>
+            </div>
+            <div className="row" style={{ marginTop: 8 }}>
+              <label style={{ display: "flex", gap: 8, alignItems: "center", cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={mediaEnabled}
+                  onChange={(e) => setMediaEnabled(e.target.checked)}
+                />
+                Attach Images
+                <span style={{ opacity: 0.6, fontSize: 12 }}>— multimodal embeddings (~30% of incidents)</span>
               </label>
             </div>
           </>
@@ -491,6 +504,11 @@ export default function App() {
               Progress: <b className="mono">{status.repeatableProgress.current} / {status.repeatableProgress.total}</b>
             </span>
           )}
+          {status?.repeatableProgress?.mediaEnabled && (
+            <span className="pill pill--blue" title="Media documents with embeddings created">
+              Media: <b className="mono">{status.repeatableProgress.mediaCount ?? 0}</b>
+            </span>
+          )}
         </div>
 
         {/* Progress bar for repeatable mode */}
@@ -512,6 +530,7 @@ export default function App() {
             <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4, textAlign: "center" }}>
               {Math.round((status.repeatableProgress.current / status.repeatableProgress.total) * 100)}% complete
               {status.repeatableProgress.outputMode && ` — Output: ${status.repeatableProgress.outputMode}`}
+              {status.repeatableProgress.mediaEnabled && ` — Media: ${status.repeatableProgress.mediaCount ?? 0}`}
             </div>
           </div>
         )}

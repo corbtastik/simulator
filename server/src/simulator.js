@@ -2,7 +2,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { CONFIG, buildSimRunId } from './config.js';
-import { connectDB, insertSimRun, endSimRun } from './db.js';
+import { connectDB, insertSimRun, endSimRun, insertMediaDoc, ensureMediaIndexes } from './db.js';
 import { loadCityModel, pickCity, jitterPoint } from './cityModel.js';
 import { makeRNG } from './rng.js';
 import { makeServiceIssue, initServiceIssueRun, cleanupServiceIssueRun } from './serviceIssues.js';
@@ -10,6 +10,7 @@ import { SEVERITY_MAP } from './typeSpecs.js';
 import { getRunState, setCurrentSimRun, clearCurrentSimRun } from './runState.js';
 import { repairScheduler } from './repairScheduler.js';
 import { injectScenarios, listScenarios } from './scenarioRunner.js';
+import { createMediaDocument, isMediaServiceReady } from './mediaService.js';
 
 const SIM = {
   running: false,
@@ -28,6 +29,8 @@ const SIM = {
     datasetName: null,
     repeatableCount: 1000,
     outputMode: 'both',      // 'atlas' | 'json' | 'both'
+    // Media attachments
+    mediaEnabled: false,     // attach images with embeddings
   },
   workers: [],
   stats: {
@@ -87,6 +90,11 @@ export async function startSimulator(input) {
   p.repeatableCount = Math.max(1, Math.min(100000, Number(input?.repeatableCount) || 1000));
   p.outputMode = ['atlas', 'json', 'both'].includes(input?.outputMode) ? input.outputMode : 'both';
 
+  // Media attachment (only in repeatable mode to avoid slowing continuous mode)
+  p.mediaEnabled = p.genMode === 'repeatable' && (
+    input?.mediaEnabled !== undefined ? !!input.mediaEnabled : CONFIG.MEDIA_ENABLED
+  );
+
   // Use datasetName as seed for repeatable mode
   if (p.genMode === 'repeatable' && !p.seed) {
     p.seed = hashString(p.datasetName);
@@ -96,6 +104,18 @@ export async function startSimulator(input) {
   SIM.repeatableProgress = null;
 
   const { db, coll } = await connectDB();
+
+  // Ensure media indexes if enabled
+  if (p.mediaEnabled) {
+    await ensureMediaIndexes(db);
+    const mediaStatus = await isMediaServiceReady();
+    if (!mediaStatus.ready) {
+      console.warn('[simulator] Media service not ready:', mediaStatus.reason);
+      p.mediaEnabled = false;
+    } else {
+      console.log('[simulator] Media service ready:', mediaStatus.imageCount, 'images available');
+    }
+  }
 
   const simRunId = buildSimRunId(p.seed);
   console.log('[after buildSimRunId]', { simRunId, seed: p.seed, repairsEnabled: p.repairsEnabled });
@@ -176,6 +196,8 @@ export async function startSimulator(input) {
       total: p.repeatableCount,
       outputMode: p.outputMode,
       datasetName: p.datasetName,
+      mediaEnabled: p.mediaEnabled,
+      mediaCount: 0,
     };
 
     const cancel = runRepeatableWorker({
@@ -185,9 +207,11 @@ export async function startSimulator(input) {
       rand,
       gaussian,
       coll,
+      db,
       simRunId: runId,
       outputMode: p.outputMode,
       datasetName: p.datasetName,
+      mediaEnabled: p.mediaEnabled,
     });
     SIM.workers.push(cancel);
     return getStatus();
@@ -414,12 +438,14 @@ async function writeRepeatableJson(datasetName, incidents) {
 }
 
 /** Repeatable mode worker: generates fixed count of incidents, then stops */
-function runRepeatableWorker({ count, batchSize, spread, rand, gaussian, coll, simRunId, outputMode, datasetName }) {
+function runRepeatableWorker({ count, batchSize, spread, rand, gaussian, coll, db, simRunId, outputMode, datasetName, mediaEnabled }) {
   if (!simRunId) console.error('[simulator] runRepeatableWorker started without simRunId');
   let alive = true;
   SIM.stats.activeWorkers += 1;
 
   const allIncidents = []; // collect for JSON output
+  let mediaCount = 0;
+  const mediaRate = CONFIG.MEDIA_ATTACHMENT_RATE;
 
   const tick = async () => {
     try {
@@ -460,6 +486,24 @@ function runRepeatableWorker({ count, batchSize, spread, rand, gaussian, coll, s
           } catch {
             SIM.stats.history.push(docs.length);
           }
+
+          // Create media documents for a subset of incidents
+          if (mediaEnabled && db) {
+            for (const doc of docs) {
+              // Use seeded random for deterministic selection
+              if (rand() < mediaRate) {
+                try {
+                  const mediaDoc = await createMediaDocument(doc, simRunId, rand);
+                  if (mediaDoc) {
+                    await insertMediaDoc(db, mediaDoc);
+                    mediaCount++;
+                  }
+                } catch (err) {
+                  console.error('[simulator] Media creation failed:', err?.message || err);
+                }
+              }
+            }
+          }
         }
 
         // Collect for JSON output
@@ -473,6 +517,7 @@ function runRepeatableWorker({ count, batchSize, spread, rand, gaussian, coll, s
         SIM.repeatableProgress = {
           ...SIM.repeatableProgress,
           current: generated,
+          mediaCount,
         };
 
         if (SIM.stats.history.length > 300) {
@@ -491,6 +536,10 @@ function runRepeatableWorker({ count, batchSize, spread, rand, gaussian, coll, s
         } catch (err) {
           console.error('[simulator] Failed to write JSON output:', err?.message || err);
         }
+      }
+
+      if (mediaEnabled) {
+        console.log(`[simulator] Created ${mediaCount} media documents with embeddings`);
       }
 
       console.log(`[simulator] Repeatable mode complete: ${generated} incidents generated`);

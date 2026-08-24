@@ -197,3 +197,44 @@ export async function closeDB() {
     coll = undefined;
   }
 }
+
+/* ------------------------------------------------------------------
+ * incident_media collection helpers (multimodal image embeddings)
+ * ------------------------------------------------------------------*/
+
+/**
+ * Ensure indexes for incident_media collection.
+ * Note: Vector search index must be created in Atlas UI, not via driver.
+ */
+export async function ensureMediaIndexes(passedDb) {
+  const _db = passedDb || getDb();
+  const mediaColl = _db.collection(CONFIG.MEDIA_COLL_NAME);
+
+  // Reference to parent incident
+  await mediaColl.createIndex({ incidentId: 1 }, { name: 'media_incidentId' });
+
+  // Query by sim run
+  await mediaColl.createIndex({ simRunId: 1, ts: -1 }, { name: 'media_simRunId_ts' });
+
+  // Query by media type and category
+  await mediaColl.createIndex({ mediaType: 1, category: 1 }, { name: 'media_type_category' });
+
+  console.log('[db] incident_media indexes ensured');
+}
+
+/**
+ * Insert a media document
+ */
+export async function insertMediaDoc(passedDb, doc) {
+  const _db = passedDb || getDb();
+  return _db.collection(CONFIG.MEDIA_COLL_NAME).insertOne(doc);
+}
+
+/**
+ * Count media documents (optionally filtered by simRunId)
+ */
+export async function countMediaDocs(passedDb, { simRunId } = {}) {
+  const _db = passedDb || getDb();
+  const filter = simRunId ? { simRunId } : {};
+  return _db.collection(CONFIG.MEDIA_COLL_NAME).countDocuments(filter);
+}
