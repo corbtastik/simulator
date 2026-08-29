@@ -1,4 +1,4 @@
-# U.S. Incidents Simulator — Mini User-Guide
+# Incident Simulator — Mini User-Guide
 
 A lightweight demo that simulates **telecom incidents** across U.S. cities and streams them into MongoDB. A React UI controls the simulator (EPS, spread, concurrency, seed) and shows live status; a Node/Express server generates events and writes them to MongoDB Atlas.
 
@@ -53,7 +53,7 @@ Shows the raw JSON from `/status` so you can verify the live configuration and t
 ## Repository layout
 
 ```
-simulator/
+incident-simulator/
   server/
     src/
       config.js          # env + sane defaults
@@ -100,7 +100,7 @@ simulator/
 1. Install deps and make your env file:
 
 ```bash
-cd simulator/server
+cd incident-simulator/server
 npm i
 cp .env.example .env
 ```
@@ -340,7 +340,7 @@ Each insert is a single **incident event**:
 ## Setup: Web UI
 
 ```bash
-cd simulator/web
+cd incident-simulator/web
 npm i
 npm run dev
 ```
@@ -463,7 +463,7 @@ Yes! Organize them by category folder, generate a manifest.json, and point to th
 **Server**
 
 ```bash
-cd simulator/server
+cd incident-simulator/server
 npm run start   # run
 npm run dev     # node --watch
 ```
@@ -471,7 +471,7 @@ npm run dev     # node --watch
 **Web**
 
 ```bash
-cd simulator/web
+cd incident-simulator/web
 npm run dev
 ```
 
