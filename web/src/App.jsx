@@ -204,7 +204,7 @@ export default function App() {
   return (
     <div className="wrap">
       <div className="header-bar">
-        <h1>U.S. Incidents Simulator</h1>
+        <h1>Incident Simulator</h1>
         <button
           className="theme-toggle"
           onClick={toggle}
